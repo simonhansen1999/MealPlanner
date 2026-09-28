@@ -1,0 +1,56 @@
+﻿@page "/shopping-list"
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using System.Text.Json
+@using Madplan.Authentication
+@using Madplan.Components.Pages.Authentication_pages
+@using Madplan.Components.Pages.Shopping_pages.Childs
+@using Madplan.Models
+@using Madplan.Models.Enums
+@using Madplan.Services
+@using Madplan.Services.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject NavigationManager _navigation
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container mt-4" id="top">
+            <h1 class="mb-3">Indkøbsliste</h1>
+
+            <div class="row">
+                <ShopListGenerator AggregatedItems="AggregatedFromChild" />
+
+                <ShopList Aggregated="_aggregated" />
+            </div>
+        </div>
+        <div class="container mt-4">
+            <h1 class="mb-3">Dine indkøbslister</h1>
+
+            <div class="row">
+                <ShopListPersonal AggregatedItems="PersonalAggregatedFromChild" />
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <NotAuthenticated />
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<AggregatedItem> _aggregated = new();
+
+    private void AggregatedFromChild(List<AggregatedItem> aggregated)
+    {
+        _aggregated = aggregated;
+    }
+
+    private void PersonalAggregatedFromChild(List<AggregatedItem> aggregated)
+    {
+        _aggregated = aggregated;
+
+        var navUrl = !_navigation.Uri.Contains("#top") ? $"{_navigation.Uri}#top" : $"{_navigation.Uri}";
+        _navigation.NavigateTo(navUrl);
+    }
+}

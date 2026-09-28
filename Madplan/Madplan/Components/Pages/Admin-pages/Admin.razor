@@ -1,0 +1,189 @@
+﻿@page "/admin"
+@rendermode InteractiveServer
+
+@using System.Globalization
+@using Madplan.Authentication
+@using Madplan.Components.Pages.Foodplan_pages.Childs
+@using Madplan.Models
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager _navigation
+@inject AuthenticationStateProvider _authStateProvider
+@inject FoodService _foodService
+@inject FoodPlanService _foodPlanService
+@inject UserService _userService
+@inject NavigationState _navState
+@inject IJSRuntime _jS
+
+<AuthorizeView Roles="Admin">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <h1>Oversigtspanel (Admin)</h1>
+    <hr />
+    <div class="container mt-5">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2>Brugere</h2>
+        </div>
+        @if (_users is null || !_users.Any())
+        {
+            <p>Ingen brugere.</p>
+        }
+        else
+        {
+            <div class="accordion" id="userAccordion">
+                @foreach (var user in _users)
+                {
+                    var collapseId = $"collapse-{user.Id}";
+                    var headingId = $"heading-{user.Id}";
+
+                    <div class="accordion-item mb-2 shadow-sm">
+                        <h2 class="accordion-header" id="@headingId">
+                            <button class="accordion-button collapsed d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId" aria-expanded="false" aria-controls="@collapseId">
+                                <div>
+                                    <strong>@user.Name</strong>
+                                    <div class="text-muted small">@user.Email</div>
+                                </div>
+
+                                <span class="badge bg-success ms-3">
+                                    @user.Role
+                                </span>
+                            </button>
+                        </h2>
+
+                        <div id="@collapseId" class="accordion-collapse collapse" aria-labelledby="@headingId" data-bs-parent="#userAccordion">
+                            <div class="accordion-body">
+                                <div class="row mb-3">
+                                    <div class="col-md-4">
+                                        <div class="fw-semibold text-muted small">Navn</div>
+                                        <div>@user.Name</div>
+                                    </div>
+
+                                    <div class="col-md-4">
+                                        <div class="fw-semibold text-muted small">Email</div>
+                                        <div>@user.Email</div>
+                                    </div>
+
+                                    <div class="col-md-4">
+                                        <div class="fw-semibold text-muted small">Rolle</div>
+                                        <div>
+                                            <span class="badge bg-success">
+                                                @user.Role
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex">
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => EditUser(user)">
+                                        <i class="bi bi-pencil me-1"></i>
+                                        Rediger bruger
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="m-2 fw-bold">Ugeplaner</p>
+                            @if (!_foodPlans.Where(fp => fp.CreatedBy == user.Id.ToString()).Any())
+                            {
+                                <div class="col-12">
+                                    <div class="alert alert-info" role="alert">
+                                        Ingen madplaner oprettet.
+                                    </div>
+                                </div>
+                            }
+                            @foreach (var foodPlan in _foodPlans.Where(fp => fp.CreatedBy == user.Id.ToString()).OrderBy(x => x.WeekNumber))
+                            {
+                                collapseId = $"collapse2-{foodPlan.Id}";
+                                headingId = $"heading2-{foodPlan.Id}";
+
+                                <div class="accordion" id="foodAccordion">
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header" id="@headingId">
+                                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId" aria-expanded="false" aria-controls="@collapseId">
+                                                Uge @foodPlan.WeekNumber (@foodPlan.Year)
+                                            </button>
+                                        </h2>
+                                        <div id="@collapseId" class="accordion-collapse collapse" aria-labelledby="@headingId" data-bs-parent="#foodAccordion">
+                                            <div class="accordion-body">
+                                                Oprettet af: @(user is not null ? user.Name : "Ukendt bruger") (@(user is not null ? user.Email : "Ukendt email"))
+                                                <Plan FoodPlan="foodPlan" />
+                                                <hr />
+
+                                                <h5>Delt med</h5>
+                                                @if (foodPlan.SharedWith.Count > 0)
+                                                {
+                                                    <ul>
+                                                        @foreach (var sharedUserId in foodPlan.SharedWith)
+                                                        {
+                                                            var sharedUser = _users.FirstOrDefault(u => u.Email.ToString().Equals(sharedUserId.Email));
+                                                            <li>@(sharedUser is not null ? sharedUser.Name : "Ukendt bruger") (@(sharedUser is not null ? sharedUser.Email : "Ukendt email"))</li>
+                                                        }
+                                                    </ul>
+                                                }
+                                                else
+                                                {
+                                                    <p>Ugeplanen er ikke delt med nogen.</p>
+                                                }
+                                                <hr />
+                                                <button class="btn btn-sm btn-outline-primary" @onclick="() => EditFoodPlan(foodPlan)">
+                                                    <i class="bi bi-pencil me-1"></i>
+                                                    Rediger ugeplan
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteFoodPlan(foodPlan)">
+                                                    <i class="bi bi-trash me-1"></i>
+                                                    Slet ugeplan
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</AuthorizeView>
+
+@code {
+    private List<FoodPlan> _foodPlans { get; set; } = new List<FoodPlan>();
+    private List<AppUser> _users { get; set; } = new List<AppUser>();
+
+    private readonly string[] _daysOfWeek = GlobalVariables.DaysOfWeek;
+    private readonly int _weekNumber = CultureInfo.CurrentCulture.Calendar.GetWeekOfYear(DateTime.Now, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is not null && !user.Identity.IsAuthenticated || !user.IsInRole("Admin"))
+        {
+            _navigation.NavigateTo("/access-denied");
+            return;
+        }
+
+        _foodPlans = await _foodPlanService.GetAll();
+        _users = await _userService.GetAll();
+    }
+
+    private async Task DeleteFoodPlan(FoodPlan foodPlan)
+    {
+        await _foodPlanService.Remove(foodPlan);
+        _foodPlans = await _foodPlanService.GetAll();
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    //Navigation
+    private void EditFoodPlan(FoodPlan foodPlan)
+    {
+        _navigation.NavigateTo($"/foodplan/edit/{foodPlan.Id}");
+        _navState.ReturnUrl = _navigation.Uri;
+    }
+
+    private void EditUser(AppUser user)
+    {
+        _navigation.NavigateTo($"/profile/edit/{user.Id}");
+        _navState.ReturnUrl = _navigation.Uri;
+    }
+}

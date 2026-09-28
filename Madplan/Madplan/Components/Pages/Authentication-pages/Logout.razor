@@ -1,0 +1,24 @@
+﻿@page "/logout"
+@using Madplan.Authentication
+@using Madplan.Services
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Google
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+@inject NavigationManager _navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<h3>Logout</h3>
+
+@code {
+    [CascadingParameter]
+    public HttpContext _httpContext { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await _httpContext.SignOutAsync(AppConstants.AuthScheme);
+
+        _navigation.NavigateTo("/", true);
+    }
+}

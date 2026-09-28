@@ -1,0 +1,342 @@
+﻿@page "/food/add"
+
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using System.Text.Json
+@using Madplan.Models
+@using Madplan.Models.Enums
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject NavigationManager _navigation
+@inject AuthenticationStateProvider _authStateProvider
+@inject FoodService _foodService
+@inject NavigationState _navState
+
+<AuthorizeView Roles="Admin" Context="authContext">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <div class="container mt-5">
+        <h2>Tilføj ny ret</h2>
+        <EditForm Model="@_food" OnValidSubmit="HandleValidSubmit">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="mb-3">
+                <label class="form-label">Navn på retten</label>
+                <InputText class="form-control" @bind-Value="_food.Name" placeholder="Indtast rettens navn her" />
+                <ValidationMessage For="@(() => _food.Name)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Billede (link)</label>
+                <InputText class="form-control" @bind-Value="_food.ImageUrl" placeholder="Indtast URL til billede her" />
+                <ValidationMessage For="@(() => _food.ImageUrl)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Kategori</label>
+                <select class="form-select" @bind="_food.Category">
+                    @foreach (FoodCategory fc in Enum.GetValues(typeof(FoodCategory)))
+                    {
+                        if (fc == FoodCategory.Alle)
+                        {
+                            continue;
+                        }
+                        <option value="@fc">@fc</option>
+                    }
+                </select>
+                <ValidationMessage For="@(() => _food.Category)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Beskrivelse</label>
+                <InputTextArea class="form-control" @bind-Value="_food.Description" rows="3" placeholder="Indtast beskrivelse om retten her" />
+                <ValidationMessage For="@(() => _food.Description)" />
+            </div>
+
+            <h4>Opskrift</h4>
+            <div class="mb-3">
+                <label class="form-label">Instruktioner</label>
+                <InputTextArea class="form-control" @bind-Value="_food.Recipe!.Instructions" rows="4" placeholder="Indtast instruktioner her" />
+                <ValidationMessage For="@(() => _food.Recipe.Instructions)" />
+            </div>
+
+            <div class="row mb-3">
+                <div class="col">
+                    <label class="form-label">Antal serveringer (personer)</label>
+                    <InputNumber class="form-control" disabled="true" title="Antal serveringer (personer) kan ikke ændres." @bind-Value="_numberOfServings" />
+                    <ValidationMessage For="@(() => _numberOfServings)" />
+                </div>
+                <div class="col">
+                    <label class="form-label">Forarbejde tid (minutter)</label>
+                    <InputNumber class="form-control" @bind-Value="_prepMinutes" />
+                    <ValidationMessage For="@(() => _prepMinutes)" />
+                </div>
+                <div class="col">
+                    <label class="form-label">Kogetid (minutter)</label>
+                    <InputNumber class="form-control" @bind-Value="_cookMinutes" />
+                    <ValidationMessage For="@(() => _cookMinutes)" />
+                </div>
+            </div>
+
+            <h4>Ingredienser</h4>
+            @foreach (var group in _food.Recipe.IngredientGroups)
+            {
+                <div class="mb-2 border p-2 rounded" @key="Guid.NewGuid()">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <InputText class="form-control me-2" placeholder="Gruppe navn" @bind-Value="group.Name" />
+                        <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => RemoveGroup(group)">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+
+                    @foreach (var ingredient in group.Ingredients)
+                    {
+                        <div class="row mb-2 align-items-center" @key="ingredient.Id">
+                            <div class="col">
+                                <InputText class="form-control" placeholder="Ingrediens navn" @bind-Value="ingredient.Name" />
+                                <ValidationMessage For="@(() => ingredient.Name)" />
+                            </div>
+                            <div class="col">
+                                <InputNumber class="form-control" placeholder="Antal" @bind-Value="ingredient.Quantity" />
+                                <ValidationMessage For="@(() => ingredient.Quantity)" />
+                            </div>
+                            <div class="col">
+                                <select class="form-select" @bind="ingredient.Unit">
+                                    @foreach (UnitType unit in Enum.GetValues(typeof(UnitType)))
+                                    {
+                                        <option value="@unit">@unit</option>
+                                    }
+                                </select>
+                                <ValidationMessage For="@(() => ingredient.Unit)" />
+                            </div>
+                            <div class="col-auto">
+                                <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => RemoveIngredient(group, ingredient)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    }
+
+                    <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="() => AddIngredientToGroup(group)">
+                        <i class="bi bi-plus-lg me-1"></i>
+                        Tilføj ingrediens
+                    </button>
+                </div>
+            }
+
+            <button type="button" class="btn btn-outline-primary mb-3" @onclick="AddGroup">
+                <i class="bi bi-plus-lg me-1"></i>
+                Tilføj gruppe
+            </button>
+
+
+            <hr />
+            <div>
+                <button type="submit" class="btn btn-outline-success">
+                    <i class="bi bi-check-lg me-1"></i>
+                    Opret
+                </button>
+                <button type="button" class="btn btn-outline-warning" @onclick="Cancel">
+                    <i class="bi bi-trash me-1"></i>
+                    Annuller
+                </button>
+            </div>
+        </EditForm>
+
+        <br />
+        <h2>Tilføj ny ret via upload</h2>
+        <EditForm Model="@_fileUploadModel" OnValidSubmit="HandleValidFileUpload">
+            <div class="card shadow-sm mx-auto mt-5" style="max-width: 500px;">
+                <div class="card-body">
+                    <h3 class="card-title text-center mb-3">Upload en ret (JSON)</h3>
+                    <p class="text-center text-muted mb-4">Vælg en JSON fil for at uploade din ret.</p>
+
+                    <div class="mb-3">
+                        <label class="form-label w-100 border border-dashed rounded p-4 d-flex flex-column align-items-center justify-content-center"
+                               style="cursor: pointer; min-height: 120px;">
+                            <InputFile OnChange="@OnFileSelected" accept=".json" class="d-none" />
+                            <i class="bi bi-upload text-primary fs-2 mb-2"></i>
+                            <span class="text-muted">Klik her eller træk din JSON fil</span>
+                        </label>
+
+                        @if (_selectedFile is not null)
+                        {
+                            <p class="mt-2 text-center text-success mb-0">@_selectedFile.Name</p>
+                        }
+                    </div>
+
+                    <div class="d-flex justify-content-center gap-2">
+                        @{
+                            var disabled = !(_selectedFile is not null);
+                        }
+                        <button type="submit" class="btn btn-outline-primary btn-lg" disabled="@disabled">
+                            <i class="bi bi-plus-lg me-1"></i>Upload
+                        </button>
+                        @if (_selectedFile is not null)
+                        {
+                            <button type="button" class="btn btn-outline-danger btn-lg" @onclick="() => _selectedFile = null!">
+                                <i class="bi bi-x-lg me-1"></i>
+                                Nulstil
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+            <hr />
+        </EditForm>
+    </div>
+</AuthorizeView>
+
+@code {
+    private Food _food { get; set; } = null!;
+    private FileUploadModel _fileUploadModel { get; set; } = new();
+
+    private int _prepMinutes { get; set; }
+    private int _cookMinutes { get; set; }
+    private double _numberOfServings { get; set; } = 0;
+    private IBrowserFile _selectedFile = null!;
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _selectedFile = e.File;
+    }
+
+    private async Task HandleValidFileUpload()
+    {
+        if (_selectedFile is null)
+        {
+            // Message = "Please select a JSON file.";
+            return;
+        }
+
+        if (!_selectedFile.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            // Message = "Only JSON files are allowed.";
+            return;
+        }
+
+        try
+        {
+            using var stream = _selectedFile.OpenReadStream();
+
+            var uploadFood = await JsonSerializer.DeserializeAsync<Food>(stream);
+
+            if (uploadFood is not null)
+            {
+                _food = uploadFood;
+
+                if (uploadFood.Recipe is not null)
+                {
+                    _cookMinutes = Convert.ToInt32(uploadFood.Recipe.CookingTime.TotalMinutes);
+                    _prepMinutes = Convert.ToInt32(uploadFood.Recipe.PreparationTime.TotalMinutes);
+                    _numberOfServings = uploadFood.Recipe.NumberOfServings;
+                }
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (JsonException)
+        {
+            // Message = "Invalid JSON format.";
+        }
+        catch (Exception) { }
+    }
+
+
+    private void Cancel()
+    {
+        _navigation.NavigateTo(_navState.ReturnUrl ?? "/");
+    }
+
+    private void AddGroup()
+    {
+        if (_food is not null && _food.Recipe is not null)
+        {
+            var newGroup = new IngredientGroup
+            {
+                Ingredients = new List<Ingredient>
+                {
+                    new Ingredient(0, UnitType.Gram)
+                }
+            };
+
+            _food.Recipe.IngredientGroups.Add(newGroup);
+        }
+    }
+
+    private void RemoveGroup(IngredientGroup group)
+    {
+        if (_food is not null && _food.Recipe is not null && _food.Recipe.IngredientGroups.Count() > 1)
+        {
+            _food.Recipe.IngredientGroups.Remove(group);
+        }
+    }
+
+    private void AddIngredientToGroup(IngredientGroup group)
+    {
+        var newIng = new Ingredient(0, UnitType.Gram);
+        group.Ingredients.Add(newIng);
+    }
+
+    private void RemoveIngredient(IngredientGroup group, Ingredient ingredient)
+    {
+        if (group.Ingredients.Count > 1)
+        {
+            group.Ingredients.Remove(ingredient);
+        }
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        if (_food.Recipe is not null)
+        {
+            _food.Recipe.PreparationTime = TimeSpan.FromMinutes(_prepMinutes);
+            _food.Recipe.CookingTime = TimeSpan.FromMinutes(_cookMinutes);
+
+            if (_food.Recipe.NumberOfServings.Equals(_numberOfServings))
+            {
+                _food.Recipe.NumberOfServings = _numberOfServings;
+            }
+
+            await _foodService.Add(_food);
+        }
+
+        _navigation.NavigateTo(_navState.ReturnUrl ?? "/");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is not null && !user.Identity.IsAuthenticated || !user.IsInRole("Admin"))
+        {
+            _navigation.NavigateTo("/access-denied");
+            return;
+        }
+
+        if (user.Identity is null || !user.Identity.IsAuthenticated)
+        {
+            _navigation.NavigateTo("/login");
+            return;
+        }
+
+        var userId = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "-";
+        _food = new Food("", "", userId, new Recipe());
+        _numberOfServings = _food.Recipe!.NumberOfServings;
+
+        // Initialize with one group and one ingredient
+        _food.Recipe.IngredientGroups.Add(new IngredientGroup
+        {
+            Ingredients = new List<Ingredient>
+            {
+                new Ingredient(0, UnitType.Gram)
+            }
+        });
+    }
+
+    public class FileUploadModel
+    {
+    }
+}

@@ -1,0 +1,150 @@
+﻿@page "/profile"
+@rendermode InteractiveServer
+
+@using Madplan.Authentication
+@using Madplan.Components.Pages.Authentication_pages
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using System.Threading.Tasks
+@inject AuthenticationStateProvider _authStateProvider
+@inject UserService _userService
+@inject NavigationManager _navigation
+
+<PageTitle>Min Profil</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @if (_user is not null)
+        {
+            <div class="max-w-3xl mx-auto p-6 bg-green-50 rounded-lg shadow-md">
+                <div class="flex items-center mb-6">
+                    <div class="w-24 h-24 bg-green-200 rounded-full flex items-center justify-center text-3xl font-bold text-white mr-4">
+                        @(_userNameInitials)
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-bold">Halløjsa, @_userName</h1>
+                        <hr />
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow mb-4">
+                    <h2 class="font-semibold mb-2">Personlige oplysninger</h2>
+                    <ul class="list-disc list-inside text-gray-700">
+                        @* <li><strong>ID:</strong> @_userId</li> *@
+                        <li><strong>Navn:</strong> @_userName (@_userNameInitials)</li>
+                        <li><strong>Email:</strong> @_userEmail</li>
+                        <li><strong>Rolle:</strong> @_userRole</li>
+                    </ul>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow mb-4">
+                    <h2 class="font-semibold mb-2">Familiegruppe</h2>
+                    <p class="text-gray-700 mb-2">Her kan du administere familiegrupper.</p>
+                    <button class="btn btn-outline-primary" @onclick="GoToFamilyGroup">
+                        <i class="bi bi-arrow-right me-1"></i>
+                        Gå til Familiegrupper
+                    </button>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h2 class="font-semibold mb-2">Indstillinger</h2>
+                    <p class="text-gray-700 mb-2">Her kan du justere dine præferencer for madplanlæggeren.</p>
+
+                    <h7 class="fw-bold">Standard antal serveringer (personer)</h7>
+                    <select class="form-select mb-4 w-auto" @bind="_appUser!.Settings!.DefaultNumberOfServings">
+                        <option value="" disabled>-- Vælg antal portioner --</option>
+                        @foreach (var n in GlobalVariables.ServingsMap)
+                        {
+                            <option value="@n">@n</option>
+                        }
+                    </select>
+                    <hr />
+                    <button class="btn btn-outline-success" @onclick="UpdateUser">
+                        <i class="bi bi-check-lg me-1"></i>
+                        Gem bruger
+                    </button>
+                    <button class="btn btn-outline-danger" @onclick="ConfirmDelete" disabled="@_user.IsInRole("Admin")">
+                        <i class="bi bi-x-lg me-1"></i>
+                        Slet bruger
+                    </button>
+                    @if (_showDeleteConfirm)
+                    {
+                        <div class="alert alert-warning mt-4">
+                            <p><strong>Er du sikker?</strong></p>
+                            <p>Denne handling kan ikke fortrydes.</p>
+
+                            <button class="btn btn-danger me-2" @onclick="DeleteUser">
+                                <i class="bi bi-trash-lg me-1"></i>
+                                Ja, slet bruger
+                            </button>
+
+                            <button class="btn btn-secondary" @onclick="() => _showDeleteConfirm = false">
+                                <i class="bi bi-x-lg me-1"></i>Fortryd
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+            <hr />
+        }
+    </Authorized>
+    <NotAuthorized>
+        <NotAuthenticated />
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private ClaimsPrincipal? _user;
+    private string _userId = "";
+    private string _userName = "";
+    private string _userEmail = "";
+    private string _userRole = "";
+    private string _userNameInitials = "";
+    private AppUser? _appUser;
+    private bool _showDeleteConfirm = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        _user = authState.User;
+
+        if (_user.Identity is not null && _user.Identity.IsAuthenticated)
+        {
+            _userId = _user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "-";
+            _userName = _user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value ?? "Bruger";
+            _userEmail = _user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value ?? "-";
+            _userRole = _user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? "Bruger";
+
+            _userNameInitials = string.Join("", _userName.Split(' ').Select(n => n[0])).ToUpper();
+
+            _appUser = await _userService.GetById(Guid.Parse(_userId));
+        }
+    }
+
+    private async Task UpdateUser()
+    {
+        if (_appUser is not null)
+        {
+            await _userService.Update(_appUser);
+        }
+    }
+
+    private async Task DeleteUser()
+    {
+        var id = Guid.TryParse(_userId, out var guid) ? guid : Guid.Empty;
+        await _userService.Remove(id);
+
+        _navigation.NavigateTo("/logout");
+    }
+
+    private void ConfirmDelete()
+    {
+        _showDeleteConfirm = true;
+    }
+
+    private void GoToFamilyGroup()
+    {
+        _navigation.NavigateTo("/familygroup");
+    }
+}

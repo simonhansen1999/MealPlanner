@@ -1,0 +1,454 @@
+﻿@page "/food/details/{FoodId:guid}&multiplier={Multiplier:int}"
+@rendermode InteractiveServer
+
+@using Madplan.Authentication
+@using Madplan.Components.Pages.Authentication_pages
+@using Madplan.Models
+@using Madplan.Services
+@using Madplan.Services.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using System.Text.Json
+
+@inject NavigationManager _navigation
+@inject FoodService _foodService
+@inject NavigationState _navState
+@inject AuthenticationStateProvider _authStateProvider
+@inject UserService _userService
+@inject IJSRuntime _jS
+
+<h3 class="mb-4">Detaljer for ret: @(_food?.Name ?? "") (@Multiplier personer)</h3>
+
+<AuthorizeView>
+    <Authorized>
+        @if (_food is null)
+        {
+            <div class="alert alert-info">Indlæser detaljer om retten...</div>
+        }
+        else
+        {
+            <div class="card shadow-sm mb-4">
+
+                <div class="card-header bg-white">
+                    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
+
+                        <!-- Title + Category -->
+                        <div>
+                            <h3 class="mb-1">@_food.Name</h3>
+                            <span class="badge bg-secondary">@_food.Category.GetDescription()</span>
+                        </div>
+
+                        <!-- Controls (Servings + Favorit + Admin) -->
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+
+                            <!-- Servings -->
+                            <div class="input-group input-group-sm w-auto" title="Vælg antal personer">
+                                <span class="input-group-text bg-light border-end-0 cursor-pointer">
+                                    <i class="bi bi-people"></i>
+                                </span>
+                                <select class="form-select border-start-0"
+                                        @onchange='(e) => _navigation.NavigateTo($"/food/details/{FoodId}&multiplier={e.Value}")'
+                                        value="@Multiplier"
+                                        style="min-width: 60px;">
+                                    @foreach (var i in GlobalVariables.ServingsMap)
+                                    {
+                                        <option value="@i">@i</option>
+                                    }
+                                </select>
+                            </div>
+
+                            <!-- Favorit -->
+                            <div class="d-flex gap-1 flex-row">
+                                @if (_favoriteFood is not null)
+                                {
+                                    <button class="btn btn-outline-warning btn-sm" title="Fjern som favorit" @onclick="RemoveFavorite">
+                                        <i class="bi bi-star-fill"></i>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-outline-warning btn-sm" title="Marker som favorit" @onclick="AddFavorite">
+                                        <i class="bi bi-star"></i>
+                                    </button>
+                                }
+
+                                <!-- Admin Controls -->
+                                @if (_user is not null && _user.IsInRole("Admin"))
+                                {
+                                    <!-- Mobile dropdown -->
+                                    <div class="dropdown d-inline d-sm-none">
+                                        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                            Admin
+                                        </button>
+                                        <ul class="dropdown-menu dropdown-menu-end">
+                                            <li>
+                                                <a class="dropdown-item" @onclick="() => DownloadJSON(_food)">
+                                                    <i class="bi bi-filetype-json me-1"></i> Download JSON
+                                                </a>
+                                            </li>
+                                            <li>
+                                                <a class="dropdown-item" @onclick="() => GoToEdit(_food.Id)">
+                                                    <i class="bi bi-pencil me-1"></i> Rediger
+                                                </a>
+                                            </li>
+                                            <li>
+                                                <a class="dropdown-item text-danger" @onclick="ConfirmDelete">
+                                                    <i class="bi bi-trash me-1"></i> Slet
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </div>
+
+                                    <!-- Desktop buttons -->
+                                    <div class="d-none d-sm-flex gap-1">
+                                        <button class="btn btn-outline-success btn-sm" title="Download JSON" @onclick="() => DownloadJSON(_food)">
+                                            <i class="bi bi-filetype-json"></i>
+                                        </button>
+                                        <button class="btn btn-outline-primary btn-sm" title="Rediger" @onclick="() => GoToEdit(_food.Id)">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-outline-danger btn-sm" title="Slet" @onclick="ConfirmDelete">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-body">
+
+                    <!-- DELETE CONFIRM -->
+                    @if (_showDeleteConfirm)
+                    {
+                        <div class="alert alert-warning">
+                            <strong>Er du sikker?</strong>
+                            <p>Denne handling kan ikke fortrydes.</p>
+                            <button class="btn btn-danger me-2" @onclick="() => DeleteFood(_food)">
+                                <i class="bi bi-trash me-1"></i>
+                                Ja, slet
+                            </button>
+                            <button class="btn btn-secondary" @onclick="() => _showDeleteConfirm = false">
+                                <i class="bi bi-x-lg me-1"></i>
+                                Fortryd
+                            </button>
+                        </div>
+                    }
+
+                    <div class="row g-0">
+
+                        <!-- CONTENT COLUMN -->
+                        <div class="col-12 col-lg-8 order-2 order-lg-1 pe-lg-4">
+
+
+                            <!-- Instruktioner -->
+                            <section class="my-4 p-3 border rounded shadow-sm">
+                                <h5>Instruktioner</h5>
+                                <hr />
+                                <p style="white-space: pre-line">
+                                    @_food.Recipe?.Instructions
+                                </p>
+                            </section>
+
+                            @if (_food.Recipe is not null)
+                            {
+                                <!-- Meta: Forberedelse / Kogetid -->
+                                <section class="mb-4">
+                                    <div class="row g-2 text-center">
+                                        <div class="col-6">
+                                            <div class="border rounded p-2">
+                                                <strong>Forberedelse</strong><br />
+                                                @_food.Recipe.PreparationTime.ToString(@"hh\:mm")
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="border rounded p-2">
+                                                <strong>Kogetid</strong><br />
+                                                @_food.Recipe.CookingTime.ToString(@"hh\:mm")
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                @if (_user is not null && _user.IsInRole("Admin"))
+                                {
+                                    <div class="accordion my-4 shadow-sm rounded" id="adminInfoAccordion">
+                                        <div class="accordion-item border-0">
+                                            <h2 class="accordion-header" id="headingAdminInfo">
+                                                <button class="accordion-button collapsed bg-danger-subtle text-white fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAdminInfo" aria-expanded="false" aria-controls="collapseAdminInfo" style="border-radius: 0.5rem;">
+                                                    Administrative oplysninger
+                                                </button>
+                                            </h2>
+                                            <div id="collapseAdminInfo" class="accordion-collapse collapse" aria-labelledby="headingAdminInfo" data-bs-parent="#adminInfoAccordion">
+                                                <div class="accordion-body bg-light rounded-bottom p-4">
+                                                    @{
+                                                        var creator = _users.FirstOrDefault(u => u.Id.ToString() == _food.CreatedBy);
+                                                    }
+
+                                                    <div class="mb-3">
+                                                        <strong>Antal serveringer (retten er lavet ud fra):</strong>
+                                                        <p class="text-danger mb-0" style="white-space: pre-line; font-size: 1rem;">
+                                                            @_food.Recipe?.NumberOfServings
+                                                        </p>
+                                                    </div>
+
+                                                    <div>
+                                                        <strong>Oprettet af:</strong>
+                                                        <p class="text-danger mb-0" style="white-space: pre-line; font-size: 1rem;">
+                                                            @(creator != null ? $"{creator.Name} ({creator.Email})" : "UKENDT")
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+
+                            }
+                        </div>
+
+                        <!-- IMAGE + INGREDIENSER COLUMN -->
+                        <div class="col-12 col-lg-4 order-1 order-lg-2 ps-lg-4">
+                            <!-- BILLEDE -->
+                            @if (!string.IsNullOrWhiteSpace(_food.ImageUrl))
+                            {
+                                <img src="@_food.ImageUrl" class="img-fluid rounded recipe-thumb mb-3 w-100" style="background: none;" alt="@_food.Name" />
+                            }
+                            else
+                            {
+                                <div class="recipe-placeholder mb-3 rounded">
+                                    <i class="bi bi-image"></i>
+                                    <span>Intet billede</span>
+                                </div>
+                            }
+
+                            <!-- Beskrivelse -->
+                            <section class="mb-4 my-4 p-3 border rounded shadow-sm">
+                                <h5>Beskrivelse</h5>
+                                <hr />
+                                <p class="text-muted" style="white-space: pre-line">
+                                    @_food.Description
+                                </p>
+                            </section>
+
+                            <!-- Ingredienser -->
+                            <section class="mb-4 my-4 p-3 border rounded shadow-sm">
+                                @if (_food.Recipe?.IngredientGroups?.Any() is true)
+                                {
+                                    <h5>Ingredienser</h5>
+                                    <hr />
+
+                                    @foreach (var group in _food.Recipe.IngredientGroups)
+                                    {
+                                        <div class="mb-4 p-3 border rounded shadow-sm">
+                                            <h6 class="text-success mb-3">@group.Name</h6>
+
+                                            <div class="list-group list-group-flush">
+                                                @foreach (var ingredient in group.Ingredients)
+                                                {
+                                                    <div class="list-group-item d-flex justify-content-between align-items-center px-0 py-1 border-bottom">
+                                                        <span>@ingredient.Name</span>
+                                                        <span class="text-muted">
+                                                            @((ingredient.Quantity * Multiplier).PrettyFormat()) @ingredient.Unit.ToString().ToLower()
+                                                        </span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                            </section>
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <div class="card-footer bg-white">
+                    <button class="btn btn-outline-secondary" @onclick="@(() => _navigation.NavigateTo(_navState.ReturnUrl ?? "/food/overview"))">
+                        <i class="bi bi-arrow-left me-1"></i>
+                        Tilbage
+                    </button>
+                </div>
+            </div>
+        }
+    </Authorized>
+
+    <NotAuthorized>
+        <NotAuthenticated />
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    .recipe-image-wrapper {
+        max-height: 260px;
+        background: #f8f9fa;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+    }
+
+    .recipe-image {
+        max-height: 260px;
+        object-fit: contain;
+    }
+
+    .recipe-placeholder {
+        height: 260px;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #adb5bd;
+        font-size: 1.1rem;
+        gap: 0.5rem;
+    }
+
+        .recipe-placeholder i {
+            font-size: 2rem;
+        }
+
+    /* Sticky kun på desktop */
+    @@media (min-width: 992px) {
+        .sticky-desktop {
+            position: sticky;
+            top: 1rem;
+        }
+    }
+
+    /* Lille billede */
+    .recipe-thumb {
+        max-height: 180px;
+        object-fit: contain;
+        background: #f8f9fa;
+    }
+
+    /* Placeholder */
+    .recipe-placeholder {
+        height: 180px;
+        background: #f8f9fa;
+        border: 1px dashed #ced4da;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: #adb5bd;
+        gap: 0.5rem;
+    }
+
+        .recipe-placeholder i {
+            font-size: 1.5rem;
+        }
+
+</style>
+
+@code {
+    [Parameter]
+    public Guid FoodId { get; set; }
+    [Parameter]
+    public int Multiplier { get; set; }
+    private ClaimsPrincipal? _user = null!;
+    private Food? _food;
+    private List<AppUser> _users { get; set; } = new List<AppUser>();
+    bool _showDeleteConfirm = false;
+    private string _userId = string.Empty;
+    private FavoriteFood _favoriteFood = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user is not null && user.Identity is not null && user.Identity.IsAuthenticated)
+        {
+            _user = user;
+            _userId = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "-";
+
+            _food = await _foodService.GetFoodById(FoodId);
+
+            var appUser = await _userService.GetById(Guid.Parse(_userId));
+            var fvs = appUser.FavoriteFoods;
+
+            _favoriteFood = fvs.FirstOrDefault(x => x.Food == _food.Id)!;
+
+            if (_user.IsInRole("Admin"))
+            {
+                _users = await _userService.GetAll();
+            }
+        }
+
+        if (Multiplier > 100 || Multiplier < 1)
+        {
+            Multiplier = 1;
+        }
+    }
+
+    private void GoToEdit(Guid id)
+    {
+        _navigation.NavigateTo($"/food/edit/{id}");
+        _navState.ReturnUrl = _navigation.Uri;
+    }
+
+    private void ConfirmDelete()
+    {
+        _showDeleteConfirm = true;
+    }
+
+    private async Task DeleteFood(Food food)
+    {
+        await _foodService.Remove(food);
+
+        var currUrl = _navigation.Uri;
+        if (currUrl.Equals(_navState.ReturnUrl))
+        {
+            _navState.ReturnUrl = "/food/overview";
+        }
+
+        _navigation.NavigateTo(_navState.ReturnUrl ?? "/");
+    }
+
+    private async Task DownloadJSON(Food food)
+    {
+        var json = JsonSerializer.Serialize(food, new JsonSerializerOptions { WriteIndented = true });
+
+        await _jS.InvokeVoidAsync("downloadJson", json, $"{Guid.NewGuid()}.json");
+    }
+
+    // Favorite
+    private async Task AddFavorite()
+    {
+        if (!string.IsNullOrEmpty(_userId))
+        {
+            var appUser = await _userService.GetById(Guid.Parse(_userId));
+
+            if (_food is not null)
+            {
+                FavoriteFood favoriteFood = new FavoriteFood { Food = _food.Id };
+
+                appUser.FavoriteFoods.Add(favoriteFood);
+                await _userService.Update(appUser);
+
+                _favoriteFood = favoriteFood;
+            }
+        }
+    }
+
+    private async Task RemoveFavorite()
+    {
+        if (!string.IsNullOrEmpty(_userId))
+        {
+            var appUser = await _userService.GetById(Guid.Parse(_userId));
+
+            if (_food is not null && _favoriteFood is not null)
+            {
+                appUser.FavoriteFoods.Remove(_favoriteFood);
+                await _userService.Update(appUser);
+
+                _favoriteFood = null!;
+            }
+        }
+    }
+}

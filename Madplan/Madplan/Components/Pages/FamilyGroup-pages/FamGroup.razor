@@ -1,0 +1,50 @@
+﻿@page "/familygroup"
+
+@rendermode InteractiveServer
+@using Madplan.Components.Pages.Authentication_pages
+@using Madplan.Components.Pages.FamilyGroup_pages.Childs
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject NavigationManager _navigation
+@inject NavigationState _navState
+
+<AuthorizeView>
+    <Authorized>
+
+        <div class="container py-4">
+
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="fw-bold mb-1">Familiegrupper</h2>
+                    <p class="text-muted mb-0">
+                        Administrér dine familiegrupper og medlemskaber
+                    </p>
+                </div>
+
+                <button class="btn btn-outline-primary btn-lg shadow-sm" @onclick="GoToAddPage">
+                    <i class="bi bi-plus-lg me-1"></i>
+                    Opret familiegruppe
+                </button>
+            </div>
+
+            <!-- Overview -->
+            <Overview />
+
+        </div>
+
+    </Authorized>
+
+    <NotAuthorized>
+        <NotAuthenticated />
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private void GoToAddPage()
+    {
+        _navigation.NavigateTo("/familygroup/add");
+        _navState.ReturnUrl = _navigation.Uri;
+    }
+}

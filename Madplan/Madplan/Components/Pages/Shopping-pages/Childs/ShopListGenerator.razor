@@ -1,0 +1,319 @@
+﻿@rendermode InteractiveServer
+
+@using Madplan.Authentication
+@using Madplan.Models
+@using Madplan.Models.Enums
+@using Madplan.Services
+@using Madplan.Services.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using System.Threading.Tasks
+
+@inject AuthenticationStateProvider _authStateProvider
+@inject FoodPlanService _foodPlanHelper
+@inject FoodService _foodHelper
+@inject NavigationState _navState
+@inject NavigationManager _navigation
+@inject UserService _userService
+
+<AuthorizeView>
+    <Authorized>
+        <div class="col-md-5">
+            <div class="card mb-3">
+                <div class="card-header">
+                    Vælg madplaner / dage
+                </div>
+                <div class="card-body">
+                    @if (!_foodPlans.Any())
+                    {
+                        <div class="alert alert-info">Ingen madplaner fundet.</div>
+                    }
+                    else
+                    {
+                        <div class="accordion" id="foodPlansAccordion">
+                            @foreach (var plan in _foodPlans.OrderBy(p => p.WeekNumber))
+                            {
+                                var sel = GetSelection(plan.Id);
+                                var collapseId = $"collapse-{plan.Id}";
+                                var headingId = $"heading-{plan.Id}";
+                                <div class="accordion-item mb-2 border rounded">
+                                    <div class="accordion-header d-flex justify-content-between align-items-center p-2" id="@headingId">
+                                        <div>
+                                            <strong>Uge @plan.WeekNumber (@plan.Year)</strong>
+                                            <div class="text-muted small">Oprettet af: @(_users.FirstOrDefault(x => x.Id.ToString() == plan.CreatedBy)!.Name)</div>
+                                        </div>
+
+                                        <div class="d-flex align-items-center gap-2">
+                                            <!-- Whole week toggle always visible -->
+                                            <div class="form-check form-switch mb-0">
+                                                <input class="form-check-input" type="checkbox" id="@($"week-{plan.Id}")"
+                                                       checked="@sel.IncludeWeek"
+                                                       @onchange="(e) => SetIncludeWeek(plan.Id, (bool)((ChangeEventArgs)e).Value!)" />
+                                                <label class="form-check-label small" for="@($"week-{plan.Id}")">Hele ugen</label>
+                                            </div>
+
+                                            <!-- Accordion toggle button -->
+                                            <button class="accordion-button collapsed w-auto" type="button" data-bs-toggle="collapse"
+                                                    data-bs-target="#@collapseId" aria-expanded="false" aria-controls="@collapseId" title="Vælg ugedage">
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div id="@collapseId" class="accordion-collapse collapse" aria-labelledby="@headingId" data-bs-parent="#foodPlansAccordion">
+                                        <div class="accordion-body">
+                                            <div class="row g-1">
+                                                @foreach (var day in GlobalVariables.DaysOfWeek)
+                                                {
+                                                    var checkedDay = sel.IncludeWeek || sel.SelectedDays.Contains(day);
+                                                    <div class="col-6">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="@($"{plan.Id}-{day}")" checked="@checkedDay" disabled="@sel.IncludeWeek" @onchange='(e) => ToggleDaySelection(plan.Id, day, ((ChangeEventArgs)e).Value is bool b && b)' />
+                                                            <label class="form-check-label" for="@($"{plan.Id}-{day}")">@day (@plan.Foods.FirstOrDefault(x => x.Day == day)!.Name)</label>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                    }
+                </div>
+            </div>
+
+            <div class="d-grid">
+                <button class="btn btn-outline-success" @onclick="BuildShoppingList">Generer indkøbsliste</button>
+            </div>
+            <br />
+
+            <div class="card mb-3">
+                <div class="card-header">Tilføj manuelt punkt</div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <input class="form-control" placeholder="Vare (fx Kartofler)" @bind="_manualName" />
+                    </div>
+                    <div class="row mb-2">
+                        <div class="col-6">
+                            <input class="form-control" placeholder="Antal" type="number" step="0.01" @bind-value="_manualQuantity" />
+                        </div>
+                        <div class="col-6">
+                            <select class="form-select" @bind="_manualUnit">
+                                <option value="" disabled>-- Vælg enhed --</option>
+                                @foreach (UnitType unit in Enum.GetValues(typeof(UnitType)))
+                                {
+                                    <option value="@unit">@unit</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-success" @onclick="AddManualItem">
+                            <i class="bi bi-plus-lg"></i>
+                            Tilføj
+                        </button>
+                        <button class="btn btn-outline-danger" @onclick="ClearManualInput">
+                            <i class="bi bi-trash"></i>
+                            Slet
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private List<FoodPlan> _foodPlans = new();
+    private List<PlanSelection> _selections = new();
+    [Parameter]
+    public EventCallback<List<AggregatedItem>> AggregatedItems { get; set; } = new();
+    private List<AggregatedItem> _aggregated = new();
+    private List<AppUser> _users = new();
+    private string _manualUnit = UnitType.Gram.ToString();
+    private string _manualName = string.Empty;
+    private double _manualQuantity = 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is not null && user.Identity.IsAuthenticated)
+        {
+            _users = await _userService.GetAll();
+
+            var userId = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "";
+            var email = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value ?? "-";
+
+            // Load plans created by user and plans shared with user
+            var created = await _foodPlanHelper.GetByCreatedBy(userId);
+            var shared = await _foodPlanHelper.GetByEmail(email);
+
+            // Merge unique plans
+            _foodPlans = created.Concat(shared).GroupBy(p => p.Id).Select(g => g.First()).ToList();
+
+            foreach (var plan in _foodPlans)
+            {
+                _selections.Add(new PlanSelection
+                {
+                    PlanId = plan.Id,
+                    IncludeWeek = false,
+                    SelectedDays = new HashSet<string>()
+                });
+            }
+        }
+    }
+
+    private PlanSelection GetSelection(Guid planId) => _selections.FirstOrDefault(s => s.PlanId == planId) ?? new PlanSelection(planId);
+
+    private void ToggleDaySelection(Guid planId, string day, bool isChecked)
+    {
+        var sel = GetSelection(planId);
+        if (isChecked)
+        {
+            sel.SelectedDays.Add(day);
+        }
+        else
+        {
+            sel.SelectedDays.Remove(day);
+        }
+
+        // store back
+        var idx = _selections.FindIndex(s => s.PlanId == planId);
+        if (idx >= 0)
+        {
+            _selections[idx] = sel;
+        }
+    }
+
+    private void SetIncludeWeek(Guid planId, bool include)
+    {
+        var sel = GetSelection(planId);
+        sel.IncludeWeek = include;
+
+        if (include)
+        {
+            // select all days when whole week selected
+            sel.SelectedDays = new HashSet<string>(GlobalVariables.DaysOfWeek);
+        }
+        else
+        {
+            sel.SelectedDays.Clear();
+        }
+
+        var idx = _selections.FindIndex(s => s.PlanId == planId);
+        if (idx >= 0)
+        {
+            _selections[idx] = sel;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task AddManualItem()
+    {
+        if (string.IsNullOrWhiteSpace(_manualName))
+        {
+            return;
+        }
+
+        await AddOrAggregate(_manualName.Trim(), _manualQuantity > 0 ? _manualQuantity : 1, string.IsNullOrWhiteSpace(_manualUnit) ? "" : _manualUnit.Trim(), "Manuelt", true);
+
+        ClearManualInput();
+    }
+
+    private async Task BuildShoppingList()
+    {
+        var manualList = _aggregated.Where(i => i.IsManual).ToList();
+
+        _aggregated.Clear();
+
+        await AggregatedItems.InvokeAsync(_aggregated);
+
+        _aggregated.AddRange(manualList);
+
+        foreach (var sel in _selections.Where(s => s.IncludeWeek || s.SelectedDays.Any()))
+        {
+            var plan = _foodPlans.FirstOrDefault(p => p.Id == sel.PlanId);
+            if (plan is null)
+            {
+                continue;
+            }
+
+            var daysToInclude = sel.IncludeWeek ? GlobalVariables.DaysOfWeek : sel.SelectedDays.ToArray();
+
+            foreach (var day in daysToInclude)
+            {
+                var df = plan.Foods.FirstOrDefault(f => f.Day == day);
+                if (df is null)
+                {
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(df.Name))
+                {
+                    continue;
+                }
+
+                // get food by name to obtain recipe/ingredients
+                var food = await _foodHelper.GetFoodByName(df.Name);
+                if (food?.Recipe is null)
+                {
+                    continue;
+                }
+
+                var multiplier = df.NumberOfServings > 0 ? df.NumberOfServings : 1;
+
+                foreach (var ingGroup in food.Recipe.IngredientGroups)
+                {
+                    foreach (var ing in ingGroup.Ingredients)
+                    {
+                        var r = ing.Quantity.NormalizeValueWithUnitType(ing.Unit);
+                        var f = r.Amount.FormatUnitType(r.Unit);
+
+                        await AddOrAggregate(ing.Name, r.Amount * multiplier, f.Split(":").Last(), $"Uge {plan.WeekNumber} - {day}", false);
+                    }
+                }
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task AddOrAggregate(string name, double qty, string unit, string source, bool isManual)
+    {
+        var key = $"{name}|{unit}";
+        var existing = _aggregated.FirstOrDefault(a => a.Key == key);
+        if (existing is not null)
+        {
+            existing.Quantity += qty;
+            if (!existing.Source.Contains(source))
+            {
+                existing.Source = $"{existing.Source}, {source}";
+                await AggregatedItems.InvokeAsync(_aggregated);
+            }
+        }
+        else
+        {
+            _aggregated.Add(new AggregatedItem
+            {
+                Key = key,
+                Name = name,
+                Quantity = Math.Round(qty, 2),
+                Unit = unit,
+                Source = source,
+                IsManual = isManual
+            });
+
+            await AggregatedItems.InvokeAsync(_aggregated);
+        }
+    }
+
+    private void ClearManualInput()
+    {
+        _manualName = string.Empty;
+        _manualQuantity = 1;
+        _manualUnit = UnitType.Gram.ToString();
+    }
+}

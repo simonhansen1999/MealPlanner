@@ -1,0 +1,231 @@
+﻿@page "/familygroup/edit/{FamilyGroupId:guid}"
+@rendermode InteractiveServer
+
+@using Madplan.Components.Pages.Authentication_pages
+@using Madplan.Models
+@using Madplan.Services
+@using Madplan.Services.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+@inject NavigationManager _navigation
+@inject NavigationState _navState
+@inject FamilyGroupService _familyGroupService
+@inject AuthenticationStateProvider _authStateProvider
+
+<AuthorizeView>
+    <Authorized>
+        @if (_familyGroup is not null)
+        {
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="bi bi-people-fill me-2"></i>Rediger familiegruppe</h5>
+                </div>
+
+                <div class="card-body">
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">Gruppenavn</label>
+                        <input class="form-control form-control-lg" placeholder="Fx. Familien Jensen" @bind-value="_familyGroup.Name" />
+                    </div>
+
+                    <hr />
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Tilføj familiemedlemmer</label>
+
+                        <div class="input-group mb-2">
+                            <InputText class="form-control" placeholder="Indtast email" @bind-Value="_newEmail" @oninput="ValidateEmailInput" />
+                            <button class="btn btn-outline-success" type="button" @onclick="AddMember"><i class="bi bi-plus-lg"></i></button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(_newEmail) && !_newEmail.IsValidEmail())
+                        {
+                            <div class="text-danger mt-1">Indtast en gyldig email</div>
+                        }
+
+                        <small class="text-muted">
+                            Tilføj familiemedlemmer via email. De bliver medlemmer, når de bliver tilføjet.
+                        </small>
+                        <hr />
+                    </div>
+
+                    <!-- Preview list -->
+                    <div class="mt-3">
+                        @if (_familyGroup.Members.Count == 0)
+                        {
+                            <p class="text-muted mb-0 fst-italic">Ingen medlemmer</p>
+                        }
+                        else
+                        {
+                            <ul class="list-group list-group-flush">
+                                @foreach (var member in _familyGroup.Members)
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <span>@member.Email</span>
+
+                                        <button class="btn btn-sm btn-outline-danger" title="Fjern medlem" @onclick="() => RemoveMember(member.Email)">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                </div>
+
+                <div class="card-footer bg-light d-flex justify-content-between">
+                    <div>
+                        <button class="btn btn-outline-success me-2" @onclick="Update">
+                            <i class="bi bi-check-lg me-1"></i>
+                            Opdater
+                        </button>
+
+                        <button class="btn btn-outline-warning" @onclick="Cancel">
+                            <i class="bi bi-x-lg me-1"></i>
+                            Annuller
+                        </button>
+                    </div>
+
+                    <div>
+                        <button class="btn btn-outline-danger" @onclick="ConfirmDelete">
+                            <i class="bi bi-trash "></i>
+                            Slet
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- DELETE CONFIRMATION MODAL -->
+            @if (_groupToDelete is not null)
+            {
+                <div class="modal fade show d-block"
+                     tabindex="-1"
+                     aria-modal="true"
+                     role="dialog">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content shadow">
+
+                            <div class="modal-header">
+                                <h5 class="modal-title text-danger">Slet familiegruppe</h5>
+                                <button type="button" class="btn-close" @onclick="CancelDelete"></button>
+                            </div>
+
+                            <div class="modal-body">
+                                <p>Er du sikker på, at du vil slette <strong>@_groupToDelete.Name</strong>?</p>
+                                <p class="fst-italic mb-0 text-danger">Denne handling kan ikke fortrydes.</p>
+                            </div>
+
+                            <div class="modal-footer">
+                                <button class="btn btn-secondary" @onclick="CancelDelete">Annuller</button>
+                                <button class="btn btn-danger" @onclick="ConfirmDeleteFinal">Ja, slet</button>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bootstrap backdrop -->
+                <div class="modal-backdrop fade show"></div>
+            }
+        }
+    </Authorized>
+
+    <NotAuthorized>
+        <NotAuthenticated />
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [Parameter]
+    public Guid FamilyGroupId { get; set; }
+
+    private FamilyGroup _familyGroup = null!;
+    private string _newEmail = string.Empty;
+    private string _userEmail = string.Empty;
+    private FamilyGroup? _groupToDelete;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _familyGroup = await _familyGroupService.GetByFamilyId(FamilyGroupId);
+
+        if (_familyGroup is null)
+        {
+            _navigation.NavigateTo(_navState.ReturnUrl ?? "/familygroup");
+            return;
+        }
+
+        var auth = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            _userEmail = user.FindFirstValue(ClaimTypes.Email) ?? "";
+        }
+    }
+
+    private async Task Update()
+    {
+        if (!string.IsNullOrEmpty(_familyGroup.Name))
+        {
+            await _familyGroupService.Update(_familyGroup);
+
+            _navigation.NavigateTo(_navState.ReturnUrl ?? "/familygroup");
+        }
+    }
+
+    private void AddMember()
+    {
+        var member = _familyGroup.Members.FirstOrDefault(x => x.Email == _newEmail);
+
+        if (_newEmail.IsValidEmail() && member is null && !_newEmail.Equals(_userEmail))
+        {
+            _familyGroup.Members.Add(new FamilyMember
+            {
+                FamilyId = _familyGroup.Id,
+                Email = _newEmail
+            });
+
+            _newEmail = string.Empty;
+        }
+    }
+
+    private void RemoveMember(string email)
+    {
+        var member = _familyGroup.Members.FirstOrDefault(x => x.Email == email);
+        if (member is not null)
+        {
+            _familyGroup.Members.Remove(member);
+        }
+    }
+
+    private void Cancel()
+    {
+        _navigation.NavigateTo(_navState.ReturnUrl ?? "/familygroup");
+    }
+
+    private void ValidateEmailInput(ChangeEventArgs e)
+    {
+        _newEmail = e.Value?.ToString() ?? "";
+    }
+
+    private async Task ConfirmDeleteFinal()
+    {
+        if (_groupToDelete is not null)
+        {
+            await _familyGroupService.Remove(_groupToDelete.Id);
+            _groupToDelete = null;
+            _navigation.NavigateTo(_navState.ReturnUrl ?? "/familygroup");
+        }
+    }
+
+    private void ConfirmDelete()
+    {
+        _groupToDelete = _familyGroup;
+    }
+
+    private void CancelDelete()
+    {
+        _groupToDelete = null;
+    }
+}

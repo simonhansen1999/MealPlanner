@@ -1,0 +1,41 @@
+﻿@page "/personal-week-plan"
+@rendermode InteractiveServer
+@using System.Globalization
+@using Madplan.Components.Pages.Authentication_pages
+@using Madplan.Components.Pages.Foodplan_pages.Childs
+@using Madplan.Models
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+@inject NavigationManager _navigation
+@inject NavigationState _navState
+
+<h2 class="mb-4">Dine ugentlige madplaner</h2>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <button class="btn btn-outline-primary" @onclick="GoToAddFoodPlanPage">
+                <i class="bi bi-plus-lg me-1"></i>
+                Tilføj ny ugeplan
+            </button>
+        </div>
+        <hr />
+
+        <Plan />
+    </Authorized>
+
+    <NotAuthorized>
+        <NotAuthenticated />
+    </NotAuthorized>
+</AuthorizeView>
+
+
+@code {
+    private void GoToAddFoodPlanPage()
+    {
+        _navigation.NavigateTo("/foodplan/add");
+        _navState.ReturnUrl = _navigation.Uri;
+    }
+}

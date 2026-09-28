@@ -1,0 +1,256 @@
+﻿@page "/food/edit/{FoodId:guid}"
+
+@rendermode InteractiveServer
+@using System.Threading.Tasks
+@using Madplan.Models
+@using Madplan.Models.Enums
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject NavigationManager _navigation
+@inject AuthenticationStateProvider _authStateProvider
+@inject FoodService _foodService
+@inject NavigationState _navState
+
+<AuthorizeView Roles="Admin" Context="authContext">
+    <div class="container mt-5">
+        <h2>Rediger ret</h2>
+
+        @if (_food is null || _food.Recipe is null)
+        {
+            <p>Indlæser retten...</p>
+        }
+        else
+        {
+            <EditForm Model="@_food" OnValidSubmit="HandleValidSubmit">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <div class="mb-3">
+                    <label class="form-label">Navn på retten</label>
+                    <InputText class="form-control" @bind-Value="_food.Name" placeholder="Indtast rettens navn her" />
+                    <ValidationMessage For="@(() => _food.Name)" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Billede (link)</label>
+                    <InputText class="form-control" @bind-Value="_food.ImageUrl" placeholder="Indtast URL til billede her" />
+                    <ValidationMessage For="@(() => _food.ImageUrl)" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Kategori</label>
+                    <select class="form-select" @bind="_food.Category">
+                        @foreach (FoodCategory fc in Enum.GetValues(typeof(FoodCategory)))
+                        {
+                            if (fc == FoodCategory.Alle)
+                            {
+                                continue;
+                            }
+                            <option value="@fc">@fc</option>
+                        }
+                    </select>
+                    <ValidationMessage For="@(() => _food.Category)" />
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Beskrivelse</label>
+                    <InputTextArea class="form-control" style="height: 150px;" @bind-Value="_food.Description" rows="3" placeholder="Indtast beskrivelse her" />
+                    <ValidationMessage For="@(() => _food.Description)" />
+                </div>
+
+                <h4>Opskrift</h4>
+                <div class="mb-3">
+                    <label class="form-label">Instruktioner</label>
+                    <InputTextArea class="form-control" style="height: 150px;" @bind-Value="_food.Recipe!.Instructions" rows="4" placeholder="Indtast instruktioner her" />
+                    <ValidationMessage For="@(() => _food.Recipe.Instructions)" />
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col">
+                        <label class="form-label">Antal serveringer (personer)</label>
+                        <InputNumber class="form-control" disabled="true" title="Antal serveringer (personer) kan ikke ændres." @bind-Value="_numberOfServings" />
+                        <ValidationMessage For="@(() => _numberOfServings)" />
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Forarbejde tid (minutter)</label>
+                        <InputNumber class="form-control" @bind-Value="_prepMinutes" />
+                        <ValidationMessage For="@(() => _prepMinutes)" />
+                    </div>
+                    <div class="col">
+                        <label class="form-label">Kogetid (minutter)</label>
+                        <InputNumber class="form-control" @bind-Value="_cookMinutes" />
+                        <ValidationMessage For="@(() => _cookMinutes)" />
+                    </div>
+                </div>
+
+                <h4>Ingredienser</h4>
+
+                @foreach (var group in _food.Recipe.IngredientGroups)
+                {
+                    <div class="mb-3 border p-2 rounded" @key="Guid.NewGuid()">
+                        <div class="d-flex justify-content-between mb-2 align-items-center">
+                            <InputText class="form-control me-2" placeholder="Gruppe navn" @bind-Value="group.Name" />
+                            <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => RemoveGroup(group)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+
+                        @foreach (var ingredient in group.Ingredients)
+                        {
+                            <div class="row mb-2 align-items-center" @key="ingredient.Id">
+                                <div class="col">
+                                    <InputText class="form-control" placeholder="Ingrediens navn" @bind-Value="ingredient.Name" />
+                                    <ValidationMessage For="@(() => ingredient.Name)" />
+                                </div>
+                                <div class="col">
+                                    <InputNumber class="form-control" placeholder="Antal" @bind-Value="ingredient.Quantity" />
+                                    <ValidationMessage For="@(() => ingredient.Quantity)" />
+                                </div>
+                                <div class="col">
+                                    <select class="form-select" @bind="ingredient.Unit">
+                                        @foreach (UnitType unit in Enum.GetValues(typeof(UnitType)))
+                                        {
+                                            <option value="@unit">@unit</option>
+                                        }
+                                    </select>
+                                    <ValidationMessage For="@(() => ingredient.Unit)" />
+                                </div>
+                                <div class="col-auto">
+                                    <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => RemoveIngredient(group, ingredient)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+
+                        <button type="button" class="btn btn-outline-secondary btn-sm mt-2" @onclick="() => AddIngredientToGroup(group)">
+                            <i class="bi bi-plus-lg me-1"></i>
+                            Tilføj ingrediens
+                        </button>
+                    </div>
+                }
+
+                <button type="button" class="btn btn-outline-primary mb-3" @onclick="AddGroup">
+                    <i class="bi bi-plus-lg me-1"></i>
+                    Tilføj gruppe
+                </button>
+
+                <hr />
+                <div>
+                    <button type="submit" class="btn btn-outline-success">
+                        <i class="bi bi-check-lg me-1"></i>
+                        Gem ændringer
+                    </button>
+                    <button type="button" class="btn btn-outline-warning" @onclick="Cancel">
+                        <i class="bi bi-x-lg me-1"></i>Annuller
+                    </button>
+                    <hr />
+                </div>
+            </EditForm>
+        }
+    </div>
+</AuthorizeView>
+
+@code {
+    [Parameter]
+    public Guid FoodId { get; set; }
+
+    private Food _food { get; set; } = null!;
+    private int _prepMinutes { get; set; }
+    private int _cookMinutes { get; set; }
+    private double _numberOfServings { get; set; } = 0;
+    private string _oldFoodName { get; set; } = string.Empty;
+
+    private List<IngredientGroup> _ingredientGroups { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is null || !user.Identity.IsAuthenticated || !user.IsInRole("Admin"))
+        {
+            _navigation.NavigateTo("/access-denied");
+            return;
+        }
+
+        _food = await _foodService.GetFoodById(FoodId);
+        _oldFoodName = _food.Name;
+
+        if (_food is null)
+        {
+            _navigation.NavigateTo(_navState.ReturnUrl ?? "/food/overview");
+            return;
+        }
+
+        if (_food.Recipe is not null)
+        {
+            _prepMinutes = (int)_food.Recipe.PreparationTime.TotalMinutes;
+            _cookMinutes = (int)_food.Recipe.CookingTime.TotalMinutes;
+            _numberOfServings = _food.Recipe.NumberOfServings;
+        }
+    }
+
+    private void Cancel()
+    {
+        _navigation.NavigateTo(_navState.ReturnUrl ?? "/food/overview", true);
+    }
+
+    private void AddGroup()
+    {
+        if (_food is not null && _food.Recipe is not null)
+        {
+            var newGroup = new IngredientGroup
+            {
+                Ingredients = new List<Ingredient>
+                {
+                    new Ingredient(0, UnitType.Gram)
+                }
+            };
+
+            _food.Recipe.IngredientGroups.Add(newGroup);
+        }
+    }
+
+    private void RemoveGroup(IngredientGroup group)
+    {
+        if (_food is not null && _food.Recipe is not null && _food.Recipe.IngredientGroups.Count() > 1)
+        {
+            _food.Recipe.IngredientGroups.Remove(group);
+        }
+    }
+
+    private void AddIngredientToGroup(IngredientGroup group)
+    {
+        var newIng = new Ingredient(0, UnitType.Gram);
+        group.Ingredients.Add(newIng);
+    }
+
+    private void RemoveIngredient(IngredientGroup group, Ingredient ingredient)
+    {
+        if (group.Ingredients.Count > 1)
+        {
+            group.Ingredients.Remove(ingredient);
+        }
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        if (_food.Recipe is not null)
+        {
+            _food.Recipe.PreparationTime = TimeSpan.FromMinutes(_prepMinutes);
+            _food.Recipe.CookingTime = TimeSpan.FromMinutes(_cookMinutes);
+
+            if (_food.Recipe.NumberOfServings.Equals(_numberOfServings))
+            {
+                _food.Recipe.NumberOfServings = _numberOfServings;
+            }
+
+            await _foodService.Update(_food, _oldFoodName);
+        }
+
+        _navigation.NavigateTo(_navState.ReturnUrl ?? "/food/overview");
+    }
+}
+

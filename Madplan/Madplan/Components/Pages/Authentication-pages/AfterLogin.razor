@@ -1,0 +1,88 @@
+﻿@page "/after-login"
+
+@using System.Security.Claims
+@using Madplan.Authentication
+@using Madplan.Database
+@using Madplan.Models
+@using Madplan.Models.Enums
+@using Madplan.Services
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.EntityFrameworkCore
+
+@inject AppDbContext _dbContext
+@inject NavigationManager _navigationManager
+
+<h3>After Login</h3>
+
+@code {
+    [CascadingParameter]
+    public HttpContext _httpContext { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var user = _httpContext.User;
+            if (user.Identity is not null && user.Identity.IsAuthenticated)
+            {
+                var email = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value;
+                var name = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value;
+
+                if (email is null)
+                {
+                    Console.WriteLine("Google returned no email. Cannot log in user.");
+                    return;
+                }
+
+                // Check if user exists
+                var appUser = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email);
+                if (appUser is null)
+                {
+                    var userCount = await _dbContext.Users.CountAsync();
+                    appUser = new AppUser
+                    {
+                        Name = name ?? "No Name",
+                        Email = email,
+                        Settings = new AppUserSettings(),
+                        Role = userCount == 0 ? UserRole.Admin : UserRole.Bruger
+                    };
+                    _dbContext.Users.Add(appUser);
+                    await _dbContext.SaveChangesAsync();
+                }
+
+                // Create claims
+                var claims = new Claim[]
+                {
+                    new Claim(ClaimTypes.NameIdentifier, appUser.Id.ToString()),
+                    new Claim(ClaimTypes.Name, appUser.Name),
+                    new Claim(ClaimTypes.Email, appUser.Email),
+                    new Claim(ClaimTypes.Role, appUser.Role.ToString())
+                };
+
+                var identity = new ClaimsIdentity(claims, AppConstants.AuthScheme);
+                var principal = new ClaimsPrincipal(identity);
+
+                // Sign in with persistent cookie
+                var authProperties = new AuthenticationProperties
+                {
+                    IsPersistent = true,
+                    ExpiresUtc = DateTimeOffset.UtcNow.AddDays(GlobalVariables.GoogleAuthenticationDays),
+                    AllowRefresh = true
+                };
+
+                await _httpContext.SignInAsync(AppConstants.AuthScheme, principal, authProperties);
+
+                Console.WriteLine($"User '{appUser.Name}' logged in successfully.");
+                _navigationManager.NavigateTo("/");
+            }
+            else
+            {
+                Console.WriteLine("User is not authenticated by Google.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"After-login processing failed: {ex.Message}");
+        }
+    }
+}

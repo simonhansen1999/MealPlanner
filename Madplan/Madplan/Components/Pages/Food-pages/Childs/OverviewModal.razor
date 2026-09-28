@@ -1,0 +1,91 @@
+﻿@using Madplan.Models
+@using System.Threading.Tasks
+
+@if (ShowModal)
+{
+    <div class="modal fade show d-block"
+         id="overviewModal"
+         tabindex="-1"
+         aria-labelledby="overviewModalLabel"
+         aria-modal="true"
+         role="dialog">
+
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+
+                <!-- Modal Header -->
+                <div class="modal-header">
+                    <h5 class="modal-title" id="overviewModalLabel">Opskrifter</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+
+                <!-- Modal Body -->
+                <div class="modal-body p-0">
+                    <div class="container-fluid py-4">
+                        <div class="row">
+
+                            <!-- SIDE BAR -->
+                            <OverviewNavbar FilteredFoods="FilteredFoodsFromChild" Multiplier="MultiplierFromChild" />
+
+                            <!-- MAIN CONTENT -->
+                            <OverviewRecipes FilteredFoods="_filteredFoods" Multiplier="_multiplier" DayFood="DayFood" OnDayFoodChange="OnDayFoodChangeFromChild" />
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseModal">
+                        Luk
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap backdrop -->
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    [Parameter]
+    public Guid FoodId { get; set; }
+    private List<Food> _filteredFoods = new List<Food>();
+    private int _multiplier = 2;
+
+    [Parameter]
+    public bool ShowModal { get; set; } = false;
+    [Parameter]
+    public EventCallback<bool> ShowModalChanged { get; set; } = new();
+    [Parameter]
+    public DailyFood DayFood { get; set; } = null!;
+
+    private async Task OpenModal()
+    {
+        ShowModal = true;
+        await ShowModalChanged.InvokeAsync(ShowModal);
+    }
+
+    private async Task CloseModal()
+    {
+        ShowModal = false;
+        await ShowModalChanged.InvokeAsync(ShowModal);
+    }
+
+    private void FilteredFoodsFromChild(List<Food> filteredFoods)
+    {
+        _filteredFoods = filteredFoods;
+    }
+
+    private void MultiplierFromChild(int multiplier)
+    {
+        _multiplier = multiplier;
+    }
+
+    private async Task OnDayFoodChangeFromChild(DailyFood dailyFood)
+    {
+        await CloseModal();
+    }
+}

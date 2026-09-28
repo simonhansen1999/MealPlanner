@@ -1,0 +1,88 @@
+﻿/* === DESKTOP TABLE STYLING === */
+.plan-table {
+    border-collapse: separate;
+    border-spacing: 0.75rem;
+}
+
+/* Table header */
+.plan-day-header {
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0.75rem;
+    text-align: center;
+}
+
+/* Meal card */
+.meal-card {
+    min-height: 140px;
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background-color: #fff;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.2s ease;
+}
+
+/* Hover effect */
+@media (hover: hover) {
+    .plan-table td:hover .meal-card {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(0,0,0,0.08);
+    }
+}
+
+/* CURRENT DAY CARD */
+.bg-success-subtle .meal-card {
+    background-color: rgba(25, 135, 84, 0.12); /* lighter green */
+    box-shadow: 0 4px 10px rgba(25, 135, 84, 0.25); /* subtle green shadow */
+    transform: scale(1.02); /* slightly lifted */
+    border-radius: 1rem; /* rounded nicely */
+}
+
+/* Meal name */
+.meal-name {
+    font-weight: 600;
+}
+
+/* Empty cell */
+.text-muted.fst-italic {
+    font-style: italic;
+    color: #6c757d;
+}
+
+.meal-card {
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    background-color: #fff;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+    .meal-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(0,0,0,0.08);
+    }
+
+.today-card {
+    border: 2px solid #198754;
+    box-shadow: 0 4px 12px rgba(25, 135, 84, 0.25);
+    transform: scale(1.02);
+}
+
+.meal-name {
+    font-weight: 600;
+}
+
+.meal-card .btn-details {
+    border-radius: 0.5rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    font-weight: 500;
+}
+
+    .meal-card .btn-details:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        background-color: dimgrey; /* Optional: slightly brighter hover */
+        color: #fff; /* Ensure text is readable on hover */
+    }

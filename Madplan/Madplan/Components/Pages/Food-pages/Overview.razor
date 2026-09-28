@@ -1,0 +1,84 @@
+﻿@page "/food/overview"
+@rendermode InteractiveServer
+
+@using Madplan.Components.Pages.Authentication_pages
+@using Madplan.Components.Pages.Food_pages.Childs
+@using Madplan.Models
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject FoodService _foodService
+@inject AuthenticationStateProvider _authStateProvider
+@inject UserService _userService
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid py-4">
+
+            <div class="row">
+
+                <!-- SIDE BAR -->
+               <OverviewNavbar FilteredFoods="FilteredFoodsFromChild" Multiplier="MultiplierFromChild"/>
+
+                <!-- MAIN CONTENT -->
+               <OverviewRecipes FilteredFoods="_filteredFoods" Multiplier="_multiplier" />
+
+            </div>
+        </div>
+
+    </Authorized>
+
+    <NotAuthorized>
+        <NotAuthenticated />
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    .recipe-card {
+        border-radius: 14px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+        .recipe-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+        }
+
+    .recipe-image {
+        height: 160px;
+        border-top-left-radius: 14px;
+        border-top-right-radius: 14px;
+    }
+
+    .form-control {
+        border-radius: 10px;
+    }
+
+    .list-group-item {
+        border: 0;
+        border-radius: 10px;
+        margin-bottom: 6px;
+    }
+
+        .list-group-item.active {
+            background-color: #377dff;
+        }
+
+</style>
+
+@code {
+    [Parameter]
+    public Guid FoodId { get; set; }
+    private List<Food> _filteredFoods = new List<Food>();
+    private int _multiplier = 2;
+
+    private void FilteredFoodsFromChild(List<Food> filteredFoods)
+    {
+        _filteredFoods = filteredFoods;
+    }
+
+    private void MultiplierFromChild(int multiplier)
+    {
+        _multiplier = multiplier;
+    }
+}

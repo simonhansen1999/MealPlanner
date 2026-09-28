@@ -1,0 +1,211 @@
+﻿@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using System.Text.Json
+@using Madplan.Models
+@using Madplan.Services
+@using Madplan.Services.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject IJSRuntime _jS
+@inject PDFService _pdfService
+@inject AuthenticationStateProvider _authStateProvider
+@inject NavigationManager _navigation
+@inject UserService _userService
+
+<AuthorizeView>
+    <Authorized>
+        <div class="col-md-7" id="shoppingList">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>Din indkøbsliste</strong>
+                        <div class="text-muted small">Samlet fra valgte madplaner og manuelle punkter</div>
+                    </div>
+                    <div class="btn-group">
+                        <button class="btn btn-outline-danger" @onclick="ClearAll"><i class="bi bi-trash"></i></button>
+                        <button class="btn btn-outline-primary" @onclick="ExportJson"><i class="bi bi-filetype-json"></i></button>
+                        <button class="btn btn-outline-success" @onclick="DownloadPdf"><i class="bi bi-filetype-pdf"></i></button>
+                        <button class="btn btn-outline-warning" @onclick="PrintList"><i class="bi bi-printer"></i></button>
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    @if (!Aggregated.Any())
+                    {
+                        <div class="alert alert-secondary">Ingen varer i indkøbslisten endnu.</div>
+                    }
+                    else
+                    {
+                        <div class="">
+                            <label class="form-label no-print">Navn på indkøbsliste (valgfri)</label>
+                            <input class="form-control" @bind="_listName" placeholder="F.eks.: Indkøb til uge 12" />
+
+                            <br />
+                            <div class="form-check form-switch mb-0">
+                                @{
+                                    var id = Guid.NewGuid();
+                                }
+                                <input class="form-check-input" type="checkbox" id="@($"list-{id}")"
+                                       checked="@_showSource"
+                                       @onchange="(e) => SetIncludeSource((bool)((ChangeEventArgs)e).Value!)" />
+                                <label class="form-check-label small" for="@($"list-{id}")">Se kilde</label>
+                            </div>
+                            <hr />
+                        </div>
+                        <table class="table table-sm table-striped print-table">
+                            <thead>
+                                <tr>
+                                    <th class="checkbox-col"></th>
+                                    <th>Vare</th>
+                                    <th>Antal</th>
+                                    <th>Enhed</th>
+                                    @if (_showSource)
+                                    {
+                                        <th class="no-print">Kilde</th>
+                                    }
+                                    <th class="no-print"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Aggregated.OrderBy(i => i.Name).OrderBy(i => i.IsManual))
+                                {
+                                    <tr>
+                                        <td class="checkbox-col"></td>
+                                        <td>@item.Name</td>
+                                        <td>
+                                            @item.Quantity.PrettyFormat()
+                                        </td>
+                                        <td>@item.Unit</td>
+                                        @if (_showSource)
+                                        {
+                                            <td class="no-print">@item.Source</td>
+                                        }
+                                        <td class="text-end no-print">
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveItem(item)">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        <div class="btn-group">
+                            <button class="btn btn-outline-success" @onclick="Save">
+                                <i class="bi bi-check-lg mb-1"></i>
+                                Gem
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Parameter]
+    public List<AggregatedItem> Aggregated { get; set; } = new();
+    private List<PlanSelection> _selections = new();
+    private bool _showSource = false;
+    private string _listName = string.Empty;
+    private string _userId { get; set; } = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user is not null && user.Identity is not null && user.Identity.IsAuthenticated)
+        {
+            _userId = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "";
+        }
+    }
+
+    private async Task ExportJson()
+    {
+        var export = new
+        {
+            Name = _listName,
+            CreatedAt = DateTime.Now,
+            Items = Aggregated.Select(i => new { i.Name, i.Quantity, i.Unit, i.Source, i.IsManual }).ToList()
+        };
+
+        var json = JsonSerializer.Serialize(export, new JsonSerializerOptions { WriteIndented = true });
+
+        var name = !string.IsNullOrEmpty(_listName) ? $"-{_listName}-" : "-";
+        await _jS.InvokeVoidAsync("downloadJson", json, $"indkoebsliste{name}{DateTime.Now.ToString("s")}.pdf");
+    }
+
+    private async Task PrintList()
+    {
+        await _jS.InvokeVoidAsync("printDiv", "shoppingList");
+    }
+
+    private async Task DownloadPdf()
+    {
+        var bytes = _pdfService.CreatePDF(Aggregated);
+
+        var base64 = Convert.ToBase64String(bytes);
+
+        var name = !string.IsNullOrEmpty(_listName) ? $"-{_listName}-" : "-";
+        await _jS.InvokeVoidAsync("downloadPdfFromBytes", base64, $"indkoebsliste{name}{DateTime.Now.ToString("s")}.pdf");
+    }
+
+    private void SetIncludeSource(bool include)
+    {
+        if (_showSource)
+        {
+            _showSource = false;
+        }
+        else
+        {
+            _showSource = true;
+        }
+
+        StateHasChanged();
+    }
+
+    private void RemoveItem(AggregatedItem item)
+    {
+        if (item is not null)
+        {
+            Aggregated.Remove(item);
+        }
+    }
+
+    private void ClearAll()
+    {
+        Aggregated.Clear();
+        foreach (var s in _selections)
+        {
+            s.IncludeWeek = false;
+            s.SelectedDays.Clear();
+        }
+    }
+
+    private async Task Save()
+    {
+        if (!string.IsNullOrEmpty(_userId) && !string.IsNullOrEmpty(_listName) && Aggregated.Any())
+        {
+            ShoppingList shoppingList = new()
+            {
+                Name = _listName,
+                AggregatedItems = Aggregated
+            };
+
+            var usr = await _userService.GetById(Guid.Parse(_userId));
+
+            if (usr is not null)
+            {
+                usr.ShoppingLists.Add(shoppingList);
+
+                await _userService.Update(usr);
+            }
+
+            _navigation.NavigateTo(_navigation.Uri, true);
+
+            ClearAll();
+        }
+    }
+}

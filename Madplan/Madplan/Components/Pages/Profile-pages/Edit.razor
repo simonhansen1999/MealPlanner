@@ -1,0 +1,161 @@
+﻿@page "/profile/edit/{UserId:guid}"
+@using Madplan.Authentication
+@using Madplan.Models.Enums
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@rendermode InteractiveServer
+
+@inject UserService _userService
+@inject NavigationManager _navigation
+@inject AuthenticationStateProvider _authStateProvider
+
+<h3>Rediger bruger</h3>
+
+<AuthorizeView Roles="Admin" Context="authContext">
+    @if (_isLoading)
+    {
+        <p>Indlæser bruger...</p>
+    }
+    else if (_user is null)
+    {
+        <div class="alert alert-danger">
+            Bruger ikke fundet.
+        </div>
+    }
+    else
+    {
+        <EditForm Model="@_user" OnValidSubmit="Save">
+            <DataAnnotationsValidator />
+
+            <div class="mb-3">
+                <label class="form-label">Navn</label>
+                <input class="form-control" value="@_user.Name" disabled />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Email</label>
+                <input class="form-control" value="@_user.Email" disabled />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Rolle</label>
+                <InputSelect class="form-select" @bind-Value="_user.Role" disabled="@(_user.Role == UserRole.Admin)">
+                    @foreach (var role in Enum.GetValues<UserRole>())
+                    {
+                        <option value="@role">@role</option>
+                    }
+                </InputSelect>
+            </div>
+
+            <hr />
+            <h5>Indstillinger</h5>
+            <div class="mb-3">
+                <label class="form-label">Antal serveringer (personer)</label>
+                <InputSelect class="form-select" @bind-Value="_user.Settings!.DefaultNumberOfServings" title="Vælg antal serveringer (personer)">
+                    <option value="" disabled>-- Vælg antal portioner --</option>
+                    @foreach (var n in GlobalVariables.ServingsMap)
+                    {
+                        <option value="@n">@n</option>
+                    }
+                </InputSelect>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-outline-success">
+                    <i class="bi bi-check-lg me-1"></i>
+                    Gem ændringer
+                </button>
+                <button type="button" class="btn btn-outline-warning" @onclick="Cancel">
+                    <i class="bi bi-x-lg me-1"></i>
+                    Annuller
+                </button>
+
+                @{
+                    var isAdmin = _user.Role == UserRole.Admin;
+                }
+                <button type="button" class="btn btn-outline-danger" @onclick="ConfirmDelete" disabled="@isAdmin">
+                    <i class="bi bi-trash me-1"></i>
+                    Slet bruger
+                </button>
+            </div>
+        </EditForm>
+
+        @if (_showDeleteConfirm)
+        {
+            <div class="alert alert-warning mt-4">
+                <p><strong>Er du sikker?</strong></p>
+                <p>Denne handling kan ikke fortrydes.</p>
+
+                <button class="btn btn-outline-danger me-2" @onclick="Delete">
+                    <i class="bi bi-trash me-1"></i>
+                    Ja, slet bruger
+                </button>
+
+                <button class="btn btn-outline-secondary" @onclick="() => _showDeleteConfirm = false">
+                    <i class="bi bi-x-lg me-1"></i>
+                    Fortryd
+                </button>
+            </div>
+        }
+    }
+</AuthorizeView>
+
+@code {
+    [Parameter]
+    public Guid UserId { get; set; }
+
+    private AppUser _user { get; set; } = null!;
+    private bool _isLoading = true;
+    private bool _showDeleteConfirm = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is null || !user.Identity.IsAuthenticated || !user.IsInRole("Admin"))
+        {
+            _navigation.NavigateTo("/access-denied");
+            return;
+        }
+
+        _user = await _userService.GetById(UserId);
+        _isLoading = false;
+    }
+
+    private async Task Save()
+    {
+        if (_user is null)
+        {
+            return;
+        }
+
+        await _userService.Update(_user);
+        _navigation.NavigateTo("/admin");
+    }
+
+    private void ConfirmDelete()
+    {
+        _showDeleteConfirm = true;
+    }
+
+    private async Task Delete()
+    {
+        if (_user is null)
+        {
+            return;
+        }
+
+        if (_user.Role == UserRole.Admin)
+        {
+            return;
+        }
+        await _userService.Remove(_user.Id);
+        _navigation.NavigateTo("/admin");
+    }
+
+    private void Cancel()
+    {
+        _navigation.NavigateTo("/admin");
+    }
+}
