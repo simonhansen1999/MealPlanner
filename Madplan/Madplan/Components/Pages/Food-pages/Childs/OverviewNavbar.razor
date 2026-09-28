@@ -1,0 +1,190 @@
+﻿@using Madplan.Models
+@using Madplan.Models.Enums
+@using Madplan.Services
+@using System.Security.Claims
+@using Madplan.Services.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject FoodService _foodService
+@inject NavigationManager _navigation
+@inject NavigationState _navState
+@inject AuthenticationStateProvider _authStateProvider
+@inject UserService _userService
+
+<AuthorizeView>
+    <Authorized>
+        <!-- SIDEBAR -->
+        <div class="col-12 col-md-4 col-lg-3 mb-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+
+                    @if (_user is not null && _user.IsInRole("Admin"))
+                    {
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h2>Retter</h2>
+                            <button class="btn btn-outline-primary" @onclick="GoToAddFoodPage">
+                                <i class="bi bi-plus-lg me-1"></i>
+                                Tilføj ny ret
+                            </button>
+                        </div>
+                        <hr />
+                    }
+
+                    <h6 class="fw-semibold mb-3">Søg</h6>
+
+                    <input type="text" class="form-control mb-4" placeholder="Søg opskrifter..." value="@_searchTerm" @oninput="OnSortChanged" />
+                    <hr />
+
+                    <h6 class="fw-semibold mb-3">Sortering</h6>
+                    <select class="form-select" @bind="_sortBy" @onclick="() => Sort(_active)">
+                        <option value="" disabled>-- Vælg sortering --</option>
+                        @foreach (string term in GlobalVariables.SearchTerms)
+                        {
+                            <option value="@term">@term</option>
+                        }
+                    </select>
+                    <hr />
+
+                    <h6 class="fw-semibold mb-3">Kategorier</h6>
+
+                    <div class="list-group list-group-flush">
+                        @foreach (FoodCategory fc in Enum.GetValues(typeof(FoodCategory)))
+                        {
+                            <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center @(fc == _active ? "active" : "")" @onclick="() => Sort(fc)">
+                                <span>@fc.GetDescription()</span>
+                                <span class="badge bg-secondary">
+                                    @if (fc != FoodCategory.Alle)
+                                    {
+                                        @_foods.Count(x => x.Category == fc)
+                                    }
+                                    else
+                                    {
+                                        @_foods.Count()
+                                    }
+                                </span>
+                            </button>
+                        }
+                    </div>
+                    <hr />
+
+                    <h6 class="fw-semibold mb-3">Antal portioner</h6>
+                    <InputSelect class="form-select" @bind-Value="_multiplier" @bind-Value:after="OnMultiplierChanged" title="Vælg antal serveringer (personer)">
+                        <option value="" disabled>-- Vælg antal portioner --</option>
+                        @foreach (var n in GlobalVariables.ServingsMap)
+                        {
+                            <option value="@n">@n</option>
+                        }
+                    </InputSelect>
+                    <hr />
+                </div>
+            </div>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private ClaimsPrincipal? _user = null!;
+    [Parameter]
+    public EventCallback<int> Multiplier { get; set; }
+    private int _multiplier = 2;
+    private string _sortBy = GlobalVariables.SearchTerms.First();
+    private List<Food> _foods = [];
+    [Parameter]
+    public EventCallback<List<Food>> FilteredFoods { get; set; } = new();
+    private List<Food> _filteredFoods = new List<Food>();
+    private FoodCategory _active;
+    private string _searchTerm = string.Empty;
+    private string _userId = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _foods = await _foodService.GetAllFoods();
+        await ApplyFilters(_active);
+
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user is not null && user.Identity is not null && user.Identity.IsAuthenticated)
+        {
+            _user = user;
+            _userId = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "";
+            var appUser = await _userService.GetById(Guid.Parse(_userId));
+
+            if (appUser is not null)
+            {
+                _multiplier = appUser.Settings!.DefaultNumberOfServings;
+
+                await Multiplier.InvokeAsync(_multiplier);
+            }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnSortChanged(ChangeEventArgs e)
+    {
+        _searchTerm = e.Value?.ToString() ?? string.Empty;
+        await ApplyFilters(_active);
+    }
+
+    private async Task Sort(FoodCategory foodCategory)
+    {
+        await ApplyFilters(foodCategory);
+    }
+
+    private async Task ApplyFilters(FoodCategory foodCategory)
+    {
+        List<Food> result = _foods;
+
+        if (!string.IsNullOrWhiteSpace(_searchTerm))
+        {
+            result = result.Where(f => f.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(_sortBy))
+        {
+            switch (_sortBy)
+            {
+                case "Navn (A-Z)":
+                    result = result.OrderBy(f => f.Name).ToList();
+                    break;
+
+                case "Navn (Z-A)":
+                    result = result.OrderByDescending(f => f.Name).ToList();
+                    break;
+
+                case "Favoritter":
+                    var appUser = await _userService.GetById(Guid.Parse(_userId));
+                    var fvs = appUser.FavoriteFoods;
+
+                    result = result.Where(food => fvs.Any(f => f.Food == food.Id)).ToList();
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        if (foodCategory is not FoodCategory.Alle)
+        {
+            result = result.Where(f => f.Category == foodCategory).ToList();
+        }
+        _active = foodCategory;
+
+        _filteredFoods = result.ToList();
+
+        await FilteredFoods.InvokeAsync(_filteredFoods);
+    }
+
+    private async Task OnMultiplierChanged()
+    {
+        Console.WriteLine("GUD");
+        await Multiplier.InvokeAsync(_multiplier);
+    }
+
+    private void GoToAddFoodPage()
+    {
+        _navigation.NavigateTo("/food/add");
+        _navState.ReturnUrl = _navigation.Uri;
+    }
+}

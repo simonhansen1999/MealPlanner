@@ -1,0 +1,92 @@
+﻿@page "/shared-week-plan"
+@rendermode InteractiveServer
+
+@using System.Globalization
+@using System.Security.Claims
+@using Madplan.Authentication
+@using Madplan.Components.Pages.Authentication_pages
+@using Madplan.Components.Pages.Foodplan_pages.Childs
+@using Madplan.Models
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+
+@inject NavigationManager _navigation
+@inject FoodPlanService _foodPlanService
+@inject FoodService _foodService
+@inject AuthenticationStateProvider _authStateProvider
+@inject NavigationState _navState
+@inject UserService _userService
+@inject FamilyGroupService _familyGroupService
+
+<h2 class="mb-4">Ugentlige madplaner delt med dig</h2>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="row">
+            @if (!_foodPlans.Any())
+            {
+                <div class="col-12">
+                    <div class="alert alert-info" role="alert">
+                        Ingen madplaner er blevet delt med dig endnu.
+                    </div>
+                </div>
+            }
+            else
+            {
+                @foreach (var group in _foodPlans.GroupBy(fp => fp.CreatedBy))
+                {
+                    var user = _users.FirstOrDefault(u => u.Id.ToString() == group.Key);
+
+                    var creatorName = user?.Name ?? "UKENDT";
+
+                    <div class="col-12">
+                        <h4>Delt af: @creatorName</h4>
+
+                        <Plan FoodPlans="group.ToList()" />
+
+                        <hr />
+                    </div>
+                }
+            }
+        </div>
+
+    </Authorized>
+    <NotAuthorized>
+        <NotAuthenticated />
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<FoodPlan> _foodPlans = new List<FoodPlan>();
+    private List<AppUser> _users { get; set; } = new List<AppUser>();
+
+    private readonly int _weekNumber = CultureInfo.CurrentCulture.Calendar.GetWeekOfYear(DateTime.Now, CalendarWeekRule.FirstFourDayWeek, DayOfWeek.Monday);
+    private readonly string[] _daysOfWeek = GlobalVariables.DaysOfWeek;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is not null)
+        {
+            var email = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value ?? "-";
+
+            _foodPlans = await _foodPlanService.GetByEmail(email);
+
+            _users = await _userService.GetAll();
+        }
+    }
+
+    private void GoToDetails(Guid id, int multiplier)
+    {
+        _navigation.NavigateTo($"/food/details/{id}&multiplier={multiplier}");
+        _navState.ReturnUrl = _navigation.Uri;
+    }
+
+    private void GoToEdit(Guid id)
+    {
+        _navigation.NavigateTo($"/foodplan/edit/{id}");
+        _navState.ReturnUrl = _navigation.Uri;
+    }
+}

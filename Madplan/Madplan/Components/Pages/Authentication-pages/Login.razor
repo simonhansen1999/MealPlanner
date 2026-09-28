@@ -1,0 +1,30 @@
+﻿@page "/login"
+
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Authentication.Google
+
+<h3>Login</h3>
+
+@code {
+    [CascadingParameter]
+    public HttpContext _httpContext { get; set; } = null!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var authProperties = new AuthenticationProperties
+            {
+                RedirectUri = "/after-login"
+            };
+
+            var result = TypedResults.Challenge(authProperties, [GoogleDefaults.AuthenticationScheme]);
+
+            await result.ExecuteAsync(_httpContext);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Login redirect failed: {ex.Message}");
+        }
+    }
+}

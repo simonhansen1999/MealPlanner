@@ -1,0 +1,128 @@
+﻿@rendermode InteractiveServer
+
+@using Madplan.Models
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Threading.Tasks
+@using System.Security.Claims
+
+@inject NavigationManager _navigation
+@inject NavigationState _navState
+@inject AuthenticationStateProvider _authStateProvider
+@inject UserService _userService
+
+<AuthorizeView>
+    <Authorized>
+        <div class="col">
+
+            @if (!FilteredFoods.Any())
+            {
+                <div class="alert alert-light text-center">
+                    Ingen retter fundet.
+                </div>
+            }
+            else
+            {
+                <div class="row g-4">
+
+                    @foreach (var food in FilteredFoods)
+                    {
+                        <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
+                            <div class="card h-100 border-0 shadow-sm recipe-card">
+
+                                <div class="recipe-image bg-light d-flex align-items-center justify-content-center">
+                                    @if (!string.IsNullOrEmpty(food.ImageUrl))
+                                    {
+                                        <img src="@food.ImageUrl"
+                                             alt="@food.Name"
+                                             class="img-fluid w-100 h-100 object-fit-cover rounded-top" />
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted small">Intet billede</span>
+                                    }
+                                </div>
+
+                                <div class="card-body d-flex flex-column">
+                                    <h5 class="card-title mb-1">@food.Name</h5>
+
+                                    @*  <p class="card-text text-muted small flex-grow-1">
+                                                @food.Description
+                                            </p> *@
+
+                                    <div class="d-flex justify-content-between text-muted small mt-auto">
+                                        <span>
+                                            Ingredienser: @(food.Recipe?.IngredientGroups?.Sum(g => g.Ingredients?.Count ?? 0) ?? 0)
+                                        </span>
+
+                                        @if (_favoriteFoods.Any(x => x.Food == food.Id))
+                                        {
+                                            <span>
+                                                <i class="bi bi-star-fill text-warning" title="Dette er en af dine favoritter."></i>
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="card-footer bg-white border-0 pt-0 d-flex gap-2">
+                                    @if (DayFood is not null)
+                                    {
+                                        <button class="btn btn-sm @(DayFood is not null && !string.IsNullOrEmpty(DayFood.Name) && DayFood.Name.Equals(food.Name) ? "btn-outline-success" : "btn-outline-danger") w-50" @onclick="() => Select(food)">
+                                            @(DayFood is not null && !string.IsNullOrEmpty(DayFood.Name) && DayFood.Name.Equals(food.Name) ? "Valgt" : "Vælg")
+                                        </button>
+                                    }
+
+                                    <button class="btn btn-sm btn-outline-primary @(DayFood is not null ? "w-50" : "w-100")" @onclick="() => GoToDetails(food.Id)">
+                                        Se opskrift
+                                    </button>
+                                </div>
+
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Parameter]
+    public List<Food> FilteredFoods { get; set; } = new List<Food>();
+
+    [Parameter]
+    public int Multiplier { get; set; } = 2;
+
+    [Parameter]
+    public DailyFood DayFood { get; set; } = null!;
+    [Parameter]
+    public EventCallback<DailyFood> OnDayFoodChange { get; set; } = new();
+
+    private List<FavoriteFood> _favoriteFoods = [];
+
+    private void GoToDetails(Guid id)
+    {
+        _navigation.NavigateTo($"/food/details/{id}&multiplier={Multiplier}");
+        _navState.ReturnUrl = _navigation.Uri;
+    }
+
+    private async Task Select(Food food)
+    {
+        DayFood.Name = food.Name;
+        await OnDayFoodChange.InvokeAsync(DayFood);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user is not null && user.Identity is not null && user.Identity.IsAuthenticated)
+        {
+            var userId = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "-";
+
+            var appUser = await _userService.GetById(Guid.Parse(userId));
+            _favoriteFoods = appUser.FavoriteFoods;
+        }
+    }
+}

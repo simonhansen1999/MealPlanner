@@ -1,0 +1,36 @@
+name: Deploy .NET App
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # Your self-hosted runner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy with Docker Compose
+        run: |
+          cd $GITHUB_WORKSPACE/Madplan
+          docker pull app:${GITHUB_SHA:-latest} || true
+          docker compose up -d --build --remove-orphans
+        env:
+          Authentication__Google__ClientId: ${{ secrets.GOOGLE_CLIENT_ID }}
+          Authentication__Google__ClientSecret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+
+      - name: Remove old Docker images
+        run: |
+          OLD_IMAGES=$(docker images app --format "{{.Repository}}:{{.Tag}}" | grep -v "${GITHUB_SHA}" || true)
+          TO_DELETE=$(echo "$OLD_IMAGES" | tail -n +11)
+
+          if [ -n "$TO_DELETE" ]; then
+            echo "Removing old images:"
+            echo "$TO_DELETE"
+            docker rmi -f $TO_DELETE || true
+          else
+            echo "No old images to remove."
+          fi
+

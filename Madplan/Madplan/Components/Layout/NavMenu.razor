@@ -1,0 +1,64 @@
+﻿@using Microsoft.AspNetCore.Components.Authorization
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-bold" href="">Madplan</a>
+
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                data-bs-target="#mainNavbar"
+                aria-controls="mainNavbar"
+                aria-expanded="false"
+                aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="mainNavbar">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0 align-items-center">
+                <li class="nav-item">
+                    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Hjem</NavLink>
+                </li>
+                <li class="nav-item">
+                    <NavLink class="nav-link" href="personal-week-plan">Dine madplaner</NavLink>
+                </li>
+                <li class="nav-item">
+                    <NavLink class="nav-link" href="shared-week-plan">Delte madplaner</NavLink>
+                </li>
+                <li class="nav-item">
+                    <NavLink class="nav-link" href="week-plan">Alle madplaner</NavLink>
+                </li>
+                <li class="nav-item">
+                    <NavLink class="nav-link" href="shopping-list">Indkøbsliste</NavLink>
+                </li>
+                <li class="nav-item">
+                    <NavLink class="nav-link" href="food/overview">Opskrifter</NavLink>
+                </li>
+            </ul>
+
+            <ul class="navbar-nav ms-auto align-items-center">
+                <AuthorizeView Roles="Admin">
+                    <li class="nav-item">
+                        <NavLink class="nav-link" href="admin">Admin</NavLink>
+                    </li>
+                </AuthorizeView>
+                <AuthorizeView>
+                    <Authorized>
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="profile">Profil</NavLink>
+                        </li>
+                        <li class="nav-item">
+                            <NavLink class="nav-link" href="logout">Logud</NavLink>
+                        </li>
+                    </Authorized>
+                    <NotAuthorized>
+                        <li class="nav-item">
+                            <NavLink class="nav-link btn btn-outline-light" href="login">
+                                Login med Google
+                            </NavLink>
+                        </li>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </ul>
+        </div>
+    </div>
+</nav>
+

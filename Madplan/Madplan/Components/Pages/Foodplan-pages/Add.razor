@@ -1,0 +1,576 @@
+﻿@page "/foodplan/add"
+
+@rendermode InteractiveServer
+@using Madplan.Components.Pages.Authentication_pages
+@using Madplan.Components.Pages.Food_pages.Childs
+@using Madplan.Models
+@using Madplan.Models.Enums
+@using Madplan.Services
+@using Madplan.Services.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+@inject NavigationManager _navigation
+@inject AuthenticationStateProvider _authStateProvider
+@inject FoodService _foodService
+@inject FoodPlanService _foodPlanService
+@inject NavigationState _navState
+@inject UserService _userService
+@inject FamilyGroupService _familyGroupService
+
+<AuthorizeView Context="authContext">
+
+<div class="container py-4 foodplan-container">
+
+    <OverviewModal ShowModal="_showModal"
+                   ShowModalChanged="ShowModalFromChild"
+                   DayFood="_currDailyFood" />
+
+    <!-- HEADER -->
+    <div class="mb-4">
+        <h2 class="fw-bold">Opret madplan</h2>
+        <p class="text-muted">Planlæg din uge nemt og hurtigt</p>
+    </div>
+
+    <EditForm Model="@_foodPlan" OnValidSubmit="HandleValidSubmit">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <!-- WEEK -->
+        <div class="card shadow-sm mb-4 border-0">
+            <div class="card-body">
+                <label class="form-label fw-semibold">Ugenummer</label>
+
+                <InputSelect class="form-select form-select-lg"
+                             @bind-Value="_foodPlan.WeekNumber">
+                    @for (int week = 1; week <= 52; week++)
+                    {
+                        <option value="@week">Uge @week</option>
+                    }
+                </InputSelect>
+            </div>
+        </div>
+
+        <!-- DAYS -->
+        <div class="mb-4">
+            <h5 class="fw-semibold mb-3">Ugens retter</h5>
+
+            @foreach (var dayFood in _foodPlan.Foods)
+            {
+                <div class="card mb-3 shadow-sm border-0 day-card" @key="dayFood.Id">
+
+                    <div class="card-body">
+
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="fw-bold fs-5">@dayFood.Day</span>
+
+                            <span class="badge bg-light text-dark">
+                                @dayFood.NumberOfServings pers.
+                            </span>
+                        </div>
+
+                        <div class="text-muted mb-2">
+                            @(string.IsNullOrEmpty(dayFood.Name) ? "Ingen ret valgt" : dayFood.Name)
+                        </div>
+
+                        <button type="button"
+                                class="btn w-100 mb-2 @(string.IsNullOrEmpty(dayFood.Name) ? "btn-outline-danger" : "btn-outline-success")"
+                                @onclick="() => OpenModal(dayFood)">
+                            @(string.IsNullOrEmpty(dayFood.Name) ? "Vælg ret" : "Rediger ret")
+                        </button>
+
+                        <InputSelect class="form-select"
+                                     @bind-Value="dayFood.NumberOfServings">
+                            <option value="" disabled>Antal personer</option>
+                            @foreach (var n in GlobalVariables.ServingsMap)
+                            {
+                                <option value="@n">@n personer</option>
+                            }
+                        </InputSelect>
+
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- FAMILY GROUP -->
+        <div class="card shadow-sm mb-4 border-0">
+            <div class="card-body">
+
+                <h6 class="fw-semibold mb-3">Del med familie</h6>
+
+                @if (_familyGroups.Count > 0)
+                {
+                    <div class="d-flex flex-column flex-md-row gap-2 mb-3">
+
+                        <InputSelect class="form-select"
+                                     @bind-Value="_selectedFamilyGroupId">
+                            @foreach (var fg in _familyGroups)
+                            {
+                                <option value="@fg.Id">@fg.Name</option>
+                            }
+                        </InputSelect>
+
+                        <InputSelect class="form-select"
+                                     @bind-Value="_sharePermission">
+                            @foreach (var permission in Enum.GetValues<SharePermission>())
+                            {
+                                <option value="@permission">@permission</option>
+                            }
+                        </InputSelect>
+
+                        <button class="btn btn-success"
+                                type="button"
+                                @onclick="AddFamilyGroup">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+
+                    </div>
+                }
+
+                <!-- ACCORDION -->
+                 <hr />
+                @if (_sharedFamilyGroups.Any())
+                {
+                    <div class="accordion">
+
+                        @foreach (var share in _sharedFamilyGroups)
+                        {
+                            var isOpen = share.Key.IsExpanded;
+
+                            <div class="accordion-item border-0 mb-2 shadow-sm rounded-3 overflow-hidden">
+
+                                <!-- HEADER -->
+                                <div class="p-2 d-flex justify-content-between align-items-center">
+
+                                    <div>
+                                        <strong>@share.Value.Name</strong>
+                                        <div class="small text-muted">
+                                            <i class="bi bi-people me-1"></i>
+                                            @share.Value.Members.Count medlemmer
+                                        </div>
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+
+                                        <button class="btn btn-sm btn-outline-danger"
+                                                type="button"
+                                                @onclick="() => RemoveFamilyGroup(share.Key)">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+
+                                        <button class="btn btn-sm btn-light"
+                                                type="button"
+                                                @onclick="() => ToggleAccordion(share.Key)">
+                                            <i class="bi @(isOpen ? "bi-chevron-up" : "bi-chevron-down")"></i>
+                                        </button>
+
+                                    </div>
+                                </div>
+
+                                <!-- BODY -->
+                                <div class="accordion-body-wrapper @(isOpen ? "open" : "")">
+
+                                    <div class="accordion-body pt-2 border-top">
+
+                                        @foreach (var member in share.Value.Members)
+                                        {
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+
+                                                <span class="small">
+                                                    <i class="bi bi-person me-1"></i>
+                                                    @member.Email
+                                                </span>
+
+                                                <select class="form-select form-select-sm w-auto"
+                                                        value="@_memberPermissions[member.Email]"
+                                                        @onchange='e => _memberPermissions[member.Email] = Enum.Parse<SharePermission>(e.Value?.ToString() ?? "Visning")'>
+
+                                                    @foreach (var permission in Enum.GetValues<SharePermission>())
+                                                    {
+                                                        <option value="@permission">@permission</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        }
+
+                                        <hr />
+
+                                        <div class="d-flex justify-content-between align-items-center">
+
+                                            <span class="small fw-semibold">
+                                                <i class="bi bi-shield-lock me-1"></i>
+                                                Adgang for alle
+                                            </span>
+
+                                            <select class="form-select form-select-sm w-auto"
+                                                    @onchange="e => ApplyPermissionToAll(share.Key, e.Value)">
+                                                <option disabled selected>Vælg</option>
+                                                @foreach (var permission in Enum.GetValues<SharePermission>())
+                                                {
+                                                    <option value="@permission">@permission</option>
+                                                }
+                                            </select>
+
+                                        </div>
+
+                                    </div>
+                                </div>
+
+                            </div>
+                        }
+
+                    </div>
+                    } else
+                    {
+                         <p class="text-muted fst-italic">
+                            Planen er ikke delt med nogen familiegrupper endnu.
+                        </p>
+                    }
+
+            </div>
+        </div>
+
+        <!-- SINGLE SHARE -->
+        <div class="card shadow-sm mb-5 border-0">
+            <div class="card-body">
+
+                <h6 class="fw-semibold mb-3">Del med person</h6>
+
+                <div class="d-flex flex-column flex-md-row gap-2 mb-3">
+
+                    <InputText class="form-control"
+                               placeholder="Email"
+                               @bind-Value="_newShareEmail"
+                               @oninput="ValidateEmailInput" />
+
+                    <InputSelect class="form-select"
+                                 @bind-Value="_sharePermissionSingle">
+                        @foreach (var permission in Enum.GetValues<SharePermission>())
+                        {
+                            <option value="@permission">@permission</option>
+                        }
+                    </InputSelect>
+
+                    <button class="btn btn-success"
+                            type="button"
+                            @onclick="AddShare">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_newShareEmail) && !_newShareEmail.IsValidEmail())
+                {
+                    <div class="text-danger mt-1">Indtast en gyldig email</div>
+                }
+
+                <hr />
+                @foreach (var share in _foodPlan.SharedWith)
+                {
+                    <div class="d-flex justify-content-between align-items-center border rounded p-2 mb-2">
+
+                        <span>@share.Email</span>
+
+                        <div class="d-flex gap-2">
+
+                            <InputSelect class="form-select form-select-sm"
+                                         @bind-Value="share.Permission">
+                                @foreach (var permission in Enum.GetValues<SharePermission>())
+                                {
+                                    <option value="@permission">@permission</option>
+                                }
+                            </InputSelect>
+
+                            <button class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => RemoveShare(share)">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+
+                        </div>
+                    </div>
+                }
+
+                @if (!_foodPlan.SharedWith.Any())
+                {
+                    <p class="text-muted fst-italic">Planen er ikke delt med nogen enkeltpersoner endnu.</p>
+                }
+            </div>
+        </div>
+
+        <!-- ACTION -->
+        <div class="action-bar">
+            <button type="submit" class="btn btn-success btn-lg w-100">
+                Gem madplan
+            </button>
+
+            <button type="button"
+                    class="btn btn-outline-secondary w-100 mt-2"
+                    @onclick="Cancel">
+                Annuller
+            </button>
+        </div>
+
+    </EditForm>
+</div>
+
+</AuthorizeView>
+
+<AuthorizeView>
+    <NotAuthorized>
+        <NotAuthenticated />
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+.foodplan-container { max-width: 700px; }
+
+.day-card { border-radius: 16px; transition: 0.2s; }
+.day-card:hover { transform: translateY(-2px); }
+
+.action-bar {
+    position: sticky;
+    bottom: 0;
+    background: white;
+    padding: 12px;
+    border-top: 1px solid #eee;
+}
+
+.accordion-body-wrapper {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height 0.25s ease, opacity 0.2s ease;
+}
+
+.accordion-body-wrapper.open {
+    max-height: 1000px;
+    opacity: 1;
+}
+
+.btn-light {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+}
+</style>
+
+@code {
+    private FoodPlan _foodPlan = new();
+    private List<Food> _foods = [];
+    private string _newShareEmail = string.Empty;
+    private bool _showModal = false;
+    private DailyFood _currDailyFood = null!;
+    private List<FamilyGroup> _familyGroups = [];
+    private Guid _selectedFamilyGroupId;
+    private SharePermission _sharePermission = SharePermission.Visning;
+     private SharePermission _sharePermissionSingle = SharePermission.Visning;
+    private Dictionary<string, SharePermission> _memberPermissions = new();
+
+    private Dictionary<FoodPlanFamilyGroupShare, FamilyGroup> _sharedFamilyGroups = [];
+
+    // Modal
+    private void ShowModalFromChild(bool b) => _showModal = b;
+
+    private void OpenModal(DailyFood dayFood)
+    {
+        _currDailyFood = dayFood;
+        _showModal = true;
+        StateHasChanged();
+    }
+
+    private void ValidateEmailInput(ChangeEventArgs e) => _newShareEmail = e.Value?.ToString() ?? "";
+
+    // Single person share
+    private async Task AddShare()
+    {
+        if (string.IsNullOrWhiteSpace(_newShareEmail) || !_newShareEmail.IsValidEmail())
+        {
+            return;
+        }
+
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var userEmail = authState.User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value ?? "-";
+
+        if (_newShareEmail.Equals(userEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (_foodPlan.SharedWith.Any(s => s.Email.Equals(_newShareEmail, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        _foodPlan.SharedWith.Add(new FoodPlanShare
+        {
+            FoodPlanId = _foodPlan.Id,
+            Email = _newShareEmail.Trim(),
+            Permission = _sharePermissionSingle
+        });
+
+        _newShareEmail = string.Empty;
+        _sharePermissionSingle = SharePermission.Visning;
+
+        StateHasChanged();
+    }
+
+    private void RemoveShare(FoodPlanShare share)
+    {
+        _foodPlan.SharedWith.Remove(share);
+        StateHasChanged();
+    }
+
+    // FamilyGroup share
+    private async Task AddFamilyGroup()
+    {
+        if (_selectedFamilyGroupId == Guid.Empty)
+        {
+            return;
+        }
+
+        if (_foodPlan.SharedWithFamilyGroups.Any(s => s.FamilyGroupId == _selectedFamilyGroupId))
+        {
+            return;
+        }
+
+        var familyGroup = await _familyGroupService.GetById(_selectedFamilyGroupId);
+
+        if (familyGroup is not null)
+        {
+            var inPerms = new List<IndividualPermission>();
+
+            foreach (var member in familyGroup.Members)
+            {
+                var perm = new IndividualPermission() { Email = member.Email, SharePermission = _sharePermission };
+                inPerms.Add(perm);
+
+                _memberPermissions[member.Email] = perm.SharePermission;
+            }
+
+            _foodPlan.SharedWithFamilyGroups.Add(new FoodPlanFamilyGroupShare
+            {
+                FoodPlanId = _foodPlan.Id,
+                FamilyGroupId = familyGroup.Id,
+                IndividualPermissions = inPerms
+            });
+
+            _sharePermission = SharePermission.Visning;
+            _selectedFamilyGroupId = Guid.Empty;
+            StateHasChanged();
+
+            await UpdateFamilyShares();
+        }
+    }
+
+    private async Task RemoveFamilyGroup(FoodPlanFamilyGroupShare share)
+    {
+        if (share is not null)
+        {
+            _foodPlan.SharedWithFamilyGroups.Remove(share);
+
+            await UpdateFamilyShares();
+        }
+    }
+
+    private async Task ApplyPermissionToAll(FoodPlanFamilyGroupShare share, object? value)
+    {
+        if (Enum.TryParse<SharePermission>(value?.ToString(), out var permission))
+        {
+            share.IndividualPermissions.ForEach(x => x.SharePermission = permission);
+
+            var keys = _memberPermissions.Keys.ToList();
+            foreach (var key in keys)
+            {
+                _memberPermissions[key] = permission;
+            }
+        }
+    }
+
+    private void ToggleAccordion(FoodPlanFamilyGroupShare share)
+    {
+        share.IsExpanded = !share.IsExpanded;
+    }
+
+    private async Task UpdateFamilyShares()
+    {
+        _sharedFamilyGroups.Clear();
+        _memberPermissions.Clear();
+
+        foreach (var it in _foodPlan.SharedWithFamilyGroups)
+        {
+            var fg = await _familyGroupService.GetByFamilyId(it.FamilyGroupId);
+
+            if (fg is not null)
+            {
+                _sharedFamilyGroups.Add(it, fg);
+
+                foreach (var perm in it.IndividualPermissions)
+                {
+                    _memberPermissions[perm.Email] = perm.SharePermission;
+                }
+            }
+        }
+    }
+
+
+    // Submit / cancel
+    private async Task HandleValidSubmit()
+    {
+        if (_foodPlan.Foods.Any(df => string.IsNullOrWhiteSpace(df.Name)))
+        {
+            return;
+        }
+
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _foodPlan.CreatedBy = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "";
+        }
+
+        foreach (var share in _foodPlan.SharedWithFamilyGroups)
+        {
+            foreach (var perm in share.IndividualPermissions)
+            {
+                if (_memberPermissions.ContainsKey(perm.Email))
+                {
+                    perm.SharePermission = _memberPermissions[perm.Email];
+                }
+            }
+        }
+
+        await _foodPlanService.Add(_foodPlan);
+        _navigation.NavigateTo(_navState.ReturnUrl ?? "/personal-week-plan", true);
+    }
+
+    private void Cancel() => _navigation.NavigateTo(_navState.ReturnUrl ?? "/personal-week-plan");
+
+    // Initialization
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var userId = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "";
+
+        var appUser = await _userService.GetById(Guid.Parse(userId));
+
+        if (appUser is not null)
+        {
+            _foods = await _foodService.GetAllFoods();
+
+            var days = GlobalVariables.DaysOfWeek;
+            _foodPlan.Foods = days.Select(day => new DailyFood
+            {
+                Id = Guid.NewGuid(),
+                Day = day,
+                FoodPlanId = _foodPlan.Id,
+                NumberOfServings = appUser.Settings!.DefaultNumberOfServings
+            }).ToList();
+
+            _familyGroups = await _familyGroupService.GetCreatedByUserId(Guid.Parse(userId));
+
+            await UpdateFamilyShares();
+        }
+    }
+}

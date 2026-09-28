@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    image: app:${GITHUB_SHA:-latest}
+    container_name: app
+    restart: always
+    ports:
+      - "8080:80"
+
+    environment:
+      Authentication__Google__ClientId: "${Authentication__Google__ClientId}"
+      Authentication__Google__ClientSecret: "${Authentication__Google__ClientSecret}"
+      DOTNET_URLS: "http://+:80"
+      DB_PATH: "/data"
+
+    volumes:
+      - /home/deploy/madplan/data:/data

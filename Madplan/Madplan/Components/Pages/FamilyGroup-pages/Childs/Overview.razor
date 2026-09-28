@@ -1,0 +1,206 @@
+﻿@using Madplan.Models
+@using Madplan.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject NavigationManager _navManager
+
+@inject FamilyGroupService _familyGroupService
+@inject AuthenticationStateProvider _authStateProvider
+@inject NavigationState _navState
+
+<div class="row g-4">
+
+    <!-- CREATED GROUPS (EJER) -->
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-house-heart me-2"></i>
+                    Dine familiegrupper
+                </h5>
+            </div>
+
+            <div class="card-body">
+                @if (_familyGroups.Any())
+                {
+                    <div class="accordion accordion-flush" id="createdGroups">
+                        @foreach (var fg in _familyGroups)
+                        {
+                            var collapseId = $"created-{fg.Id}";
+
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed fw-semibold"
+                                            type="button"
+                                            data-bs-toggle="collapse"
+                                            data-bs-target="#@collapseId">
+                                        <span>@fg.Name</span>
+
+                                        <span class="badge badge-owner ms-2">
+                                            Ejer
+                                        </span>
+                                    </button>
+                                </h2>
+
+                                <div id="@collapseId"
+                                     class="accordion-collapse collapse accordion-animate"
+                                     data-bs-parent="#createdGroups">
+                                    <div class="accordion-body">
+
+                                        <!-- MEMBERS -->
+                                        <h6 class="text-muted mb-2">Medlemmer</h6>
+
+                                        @if (fg.Members.Any())
+                                        {
+                                            <ul class="list-unstyled mb-3">
+                                                @foreach (var member in fg.Members)
+                                                {
+                                                    <li>@member.Email</li>
+                                                }
+                                            </ul>
+                                        }
+                                        else
+                                        {
+                                            <p class="fst-italic">Ingen medlemmer</p>
+                                        }
+
+                                        <!-- ACTIONS -->
+                                        <div class="d-flex justify-content-end gap-2">
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => GoToEdit(fg.Id)">
+                                                <i class="bi bi-pencil me-1"></i>
+                                                Rediger
+                                            </button>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted mb-0">
+                        Du har endnu ikke oprettet nogen familiegrupper.
+                    </p>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- MEMBER GROUPS (MEDLEM) -->
+    <div class="col-md-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-people-fill me-2"></i>
+                    Medlemskaber
+                </h5>
+            </div>
+
+            <div class="card-body">
+                @if (_addedTofamilyGroups.Any())
+                {
+                    <div class="accordion accordion-flush" id="memberGroups">
+                        @foreach (var fg in _addedTofamilyGroups)
+                        {
+                            var collapseId = $"member-{fg.Id}";
+
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#@collapseId">
+                                        <span>@fg.Name</span>
+                                        <span class="badge badge-member ms-2">Medlem</span>
+                                    </button>
+                                </h2>
+
+                                <div id="@collapseId"
+                                     class="accordion-collapse collapse accordion-animate"
+                                     data-bs-parent="#memberGroups">
+                                    <div class="accordion-body">
+
+                                        <!-- MEMBERS -->
+                                        <h6 class="text-muted mb-2">Medlemmer</h6>
+                                        @if (fg.Members.Any())
+                                        {
+                                            <ul class="list-unstyled mb-3">
+                                                @foreach (var member in fg.Members)
+                                                {
+                                                    <li>@member.Email</li>
+                                                }
+                                            </ul>
+                                        }
+                                        else
+                                        {
+                                            <p class="fst-italic">Ingen medlemmer</p>
+                                        }
+
+                                        <!-- LEAVE BUTTON -->
+                                        <div class="d-flex justify-content-end">
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => LeaveGroup(fg)">
+                                                <i class="bi bi-box-arrow-right me-1"></i>
+                                                Forlad
+                                            </button>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted mb-0">
+                        Du er ikke medlem af nogen familiegrupper endnu.
+                    </p>
+                }
+            </div>
+        </div>
+    </div>
+
+
+</div>
+
+@code {
+    private List<FamilyGroup> _familyGroups = [];
+    private List<FamilyGroup> _addedTofamilyGroups = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = auth.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            var userEmail = user.FindFirstValue(ClaimTypes.Email) ?? "";
+
+            _familyGroups = await _familyGroupService.GetCreatedByUserId(Guid.Parse(userId));
+            _addedTofamilyGroups = await _familyGroupService.GetMemberOfByEmail(userEmail);
+        }
+    }
+
+    private async Task LeaveGroup(FamilyGroup fg)
+    {
+        var auth = await _authStateProvider.GetAuthenticationStateAsync();
+        var authUser = auth.User;
+        var userEmail = authUser.FindFirstValue(ClaimTypes.Email) ?? "";
+
+        var member = fg.Members.FirstOrDefault(m => m.Email.Equals(userEmail, StringComparison.OrdinalIgnoreCase));
+        if (member is not null)
+        {
+            fg.Members.Remove(member);
+        }
+
+        _addedTofamilyGroups.Remove(fg);
+
+        await _familyGroupService.Update(fg);
+    }
+
+    private void GoToEdit(Guid id)
+    {
+        _navManager.NavigateTo($"/familygroup/edit/{id}");
+        _navState.ReturnUrl = _navManager.Uri;
+    }
+}

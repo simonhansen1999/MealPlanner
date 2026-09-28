@@ -1,0 +1,145 @@
+﻿@rendermode InteractiveServer
+
+@using Madplan.Models
+@using Madplan.Services
+@using Madplan.Services.Extensions
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+
+@inject AuthenticationStateProvider _authStateProvider
+@inject UserService _userService
+
+<AuthorizeView>
+    <Authorized>
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <strong>Dine gemte indkøbslister</strong>
+                    <div class="text-muted small">
+                        Tidligere gemte lister, som kan genbruges
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    @if (!_shoppingLists.Any())
+                    {
+                        <div class="alert alert-secondary mb-0">
+                            Du har ingen gemte indkøbslister endnu.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="accordion" id="savedListsAccordion">
+                            @foreach (var list in _shoppingLists.OrderByDescending(l => l.CreatedAt))
+                            {
+                                var accordionId = $"list-{list.Id}";
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="@($"{accordionId}-header")">
+                                        <button class="accordion-button collapsed"
+                                                type="button"
+                                                data-bs-toggle="collapse"
+                                                data-bs-target="@($"#{accordionId}")">
+                                            <div class="w-100 d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <strong>@list.Name</strong>
+                                                    <div class="text-muted small">
+                                                        @list.AggregatedItems.Count varer
+                                                    </div>
+                                                </div>
+                                                <span class="badge bg-light text-dark mx-2">
+                                                    Oprettet: @list.CreatedAt.ToString("dd-MM-yyyy")
+                                                </span>
+                                            </div>
+                                        </button>
+                                    </h2>
+
+                                    <div id="@accordionId"
+                                         class="accordion-collapse collapse"
+                                         data-bs-parent="#savedListsAccordion">
+                                        <div class="accordion-body p-2">
+
+                                            <table class="table table-sm table-striped mb-2">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Vare</th>
+                                                        <th>Antal</th>
+                                                        <th>Enhed</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var item in list.AggregatedItems.OrderBy(i => i.Name))
+                                                    {
+                                                        <tr>
+                                                            <td>@item.Name</td>
+                                                            <td>@item.Quantity.PrettyFormat()</td>
+                                                            <td>@item.Unit</td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+
+                                            <div class="d-flex justify-content-end gap-2">
+                                                <button class="btn btn-sm btn-outline-primary" @onclick="() => LoadList(list)">
+                                                    <i class="bi bi-check-lg me-1"></i>
+                                                    Brug liste
+                                                </button>
+
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteList(list)">
+                                                    <i class="bi bi-trash me-1"></i>
+                                                    Slet
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                    <hr />
+                </div>
+            </div>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private List<ShoppingList> _shoppingLists { get; set; } = new();
+    private string _userId = string.Empty;
+    [Parameter]
+    public EventCallback<List<AggregatedItem>> AggregatedItems { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await _authStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            _userId = user.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value ?? "";
+
+            if (!string.IsNullOrEmpty(_userId))
+            {
+                var appUser = await _userService.GetById(Guid.Parse(_userId));
+                _shoppingLists = appUser.ShoppingLists;
+            }
+        }
+    }
+
+    private async Task DeleteList(ShoppingList shoppingList)
+    {
+        if (!string.IsNullOrEmpty(_userId))
+        {
+            var appUser = await _userService.GetById(Guid.Parse(_userId));
+
+            appUser.ShoppingLists.Remove(shoppingList);
+            _shoppingLists.Remove(shoppingList);
+
+            await _userService.Update(appUser);
+        }
+    }
+
+    private async Task LoadList(ShoppingList list)
+    {
+        await AggregatedItems.InvokeAsync(list.AggregatedItems);
+    }
+}
